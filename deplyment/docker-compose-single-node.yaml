@@ -1,0 +1,203 @@
+networks:
+  sentinel-net:
+    name: sentinel-net
+
+services:
+  postgres:
+    container_name: postgres
+    image: postgres:17.5-alpine3.22
+    environment:
+      POSTGRES_USER: pguser
+      POSTGRES_PASSWORD: pgpass
+      PGDATA: /data/postgres
+      POSTGRES_DB: test
+    volumes:
+      - postgres-data:/data/postgres
+    ports:
+      - 5332:5432
+    networks:
+      - sentinel-net
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U pguser -d postgres" ]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  pgadmin:
+    container_name: pgadmin #not adding this cause yugabyte health check not to start
+    image: dpage/pgadmin4:9.4.0
+    environment:
+      PGADMIN_DEFAULT_EMAIL: 'pgadmin@pgadmin.com'
+      PGADMIN_DEFAULT_PASSWORD: 'pgadmin'
+    ports:
+      - 16543:80
+    volumes:
+      - ./servers.json:/pgadmin4/servers.json
+    networks:
+      - sentinel-net
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:80/misc/ping" ]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mongo:
+    image: mongo:8.0.10-noble
+    container_name: mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root_pwd
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      - sentinel-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mongo-express:
+    image: mongo-express:1.0.2-20-alpine3.19
+    container_name: mongo-express
+#    entrypoint: [ "tini", "--", "sh", "-c", "exec mongo-express" ]
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - 8081:8081
+    networks:
+      - sentinel-net
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: 'true'
+      ME_CONFIG_MONGODB_AUTH_DATABASE: admin
+      ME_CONFIG_MONGODB_ADMINUSERNAME: root
+      ME_CONFIG_MONGODB_ADMINPASSWORD: root_pwd
+      ME_CONFIG_MONGODB_URL: mongodb://root:root_pwd@mongodb:27017
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin
+    healthcheck:
+      # the image does not have the curl command
+      test: [ "CMD-SHELL",
+        # do a GET against http://admin:admin@127.0.0.1:8081/
+        "node -e \"require('http').get(\
+                'http://admin:admin@127.0.0.1:8081/',\
+                res => process.exit(res.statusCode >= 200 && res.statusCode < 300 ? 0 : 1)\
+              )\""
+      ]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # natsmq configuration.
+  # more detail: https://docs.nats.io/running-a-nats-service/configuration
+  nats:
+    image: nats:latest
+    container_name: nats
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+      - "6222:6222"
+    expose:
+      - 8222
+    volumes:
+      - nats-storage:/data/nats
+    command:
+      - "--name=nats"
+      - "--http_port=8222"
+      - "--js"
+      - "--sd=/data/nats"
+#    healthcheck:
+#        test: echo $$(wget --server-response http://nats:8222/varz 2>&1 | grep  '200 OK') | grep '200'  || exit 1
+#        interval: 20s
+#        timeout: 5s
+#        retries: 5
+#        start_period: 40s
+    networks:
+      - sentinel-net
+
+  nats-dashboard:
+    image: mdawar/nats-dashboard
+    container_name: nats-dashboard
+    environment:
+      # The NATS monitoring server will be proxied on /proxy/* on the frontend.
+      # See: config/Caddyfile for the reverse proxy configuration.
+      REVERSE_PROXY_UPSTREAM: 'nats:8222'
+    volumes:
+      # Optional config file.
+      - ${CONFIG_PATH}/nats-config.json:/srv/config.json
+    ports:
+      - "8000:80"
+#      - target: 80
+#        published: 8000
+#        protocol: tcp
+    networks:
+      - sentinel-net
+
+
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: always
+    ports:
+      - "6333:6333"    # HTTP API
+      - "6334:6334"    # gRPC API
+    volumes:
+      - qdrant-storage:qdrant/storage
+    environment:
+      # HTTP & gRPC ports
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+      # Storage path
+      QDRANT__STORAGE__STORAGE_PATH: /qdrant/storage
+      # API key (built-in readiness endpoint uses this)
+      QDRANT__API__KEY: admin
+      # Log level
+      QDRANT__LOGGING__LOG_LEVEL: INFO
+    #    healthcheck:
+    #      test: [ "CMD-SHELL", "curl -s http://localhost:6333/healthz | grep -q 'healthz check passed%' || exit 1" ]
+    #      interval: 20s
+    #      timeout: 10s
+    #      retries: 5
+    #      start_period: 30s
+    networks:
+      - sentinel-net
+
+volumes:
+  nats-storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../data/nats
+
+  mongodb-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../data/mongo
+
+  postgres-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../data/postgres
+
+  qdrant-storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../data/qdrant
