@@ -1,15 +1,41 @@
-# Sentinel-AI
-Autonomous agentic system that reviews your configured sources, continuously scans for key events and anomalies, filters out noise, and delivers concise, actionable summaries straight to your inbox or dashboard.
+# sentinel-AI
 
+An **event-driven**, **microservice** platform for real-time feed ingestion, filtering, ranking, and anomaly detection—designed to run on Kubernetes and scale to millions of users. 🚀🐳
 
-| Service       | Description                                                                                          | Responsibility                                                                                                                                                                                                                                                                                                                                                                      | Publishes to                                     | Subscribes to / Reads from                                                          |
-| ------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| **api**       | Unified gateway for ingestion, retrieval, news listing, UI ranking, reranking, and source management | • **Ingestion:** POST `/ingest` → `raw.events`<br>• **Retrieval:** GET `/retrieve?batch_id=`<br>• **List all news:** GET `/news`<br>• **List filtered news:** GET `/news/filtered`<br>• **Default ranking & UI:** GET `/news/ranked`<br>• **Dynamic re-rank:** POST `/news/rerank`<br>• **Source Manager (CRUD):** GET/POST/PUT/DELETE `/sources` → `new.source` / `removed.source` | `raw.events`<br>`new.source`<br>`removed.source` | **Reads from:** Qdrant (vector DB)<br>**Reads/Writes to:** Postgres (sources table) |
-| **scheduler** | Schedules polling jobs for live sources                                                              | Maintain poll schedules (via APScheduler); emit `poll.source` when sources are added/removed                                                                                                                                                                                                                                                                                        | `poll.source`                                    | `new.source`<br>`removed.source`                                                    |
-| **connector** | Retrieves data from configured live sources and normalizes it                                        | Subscribe to `poll.source`; fetch & normalize each live source on demand; publish normalized events                                                                                                                                                                                                                                                                                 | `raw.events`                                     | `poll.source`                                                                       |
-| **filter**    | Filters events for relevance, enriches with embeddings, and persists them                            | Subscribe to `raw.events`; apply IT-manager relevance filters; compute embeddings; persist event (metadata + embedding) to Qdrant; publish `filtered.events`; ack only on success                                                                                                                                                                                                   | `filtered.events`                                | `raw.events`                                                                        |
-| **ranker**    | Computes and persists deterministic event scores                                                     | Subscribe to `filtered.events`; compute Importance × Recency score; upsert score into Qdrant; publish `ranked.events`; ack only on success                                                                                                                                                                                                                                          | `ranked.events`                                  | `filtered.events`                                                                   |
-| **inspector** | Detects anomalous or fake IT news and flags them in the datastore                                    | Subscribe to `filtered.events`; detect anomalies/fake news; update anomaly flag on the corresponding Qdrant record; ack only on success                                                                                                                                                                                                                                             | –                                                | `filtered.events`                                                                   |
-| **guardian**  | Monitors NATS dead-letter queue and alerts on failed messages                                        | Subscribe to NATS dead-letter queue; after configured retries are exhausted, send alerts/notifications (e.g., email, Slack, PagerDuty) for failed messages                                                                                                                                                                                                                          | `alerts.notifications`                           | NATS dead-letter queue subject                                                      |
-| **web**       | User-facing web application for visualizing and interacting with the newsfeed                        | Render dashboards and lists; call API endpoints to list all news, filtered news, ranked news; provide UI controls for reranking and source CRUD operations                                                                                                                                                                                                                          | –                                                | **Reads from:** HTTP API endpoints on `api` service                                 |
+**Key Features:**
 
+* 🔗 **Dynamic Ingestion:** Subscribe to any data feed (RSS, APIs, webhooks, etc.) and ingest events in real time.
+* 🧹 **Smart Filtering:** Apply custom relevance rules or plug in ML models to filter events.
+* ⚖️ **Deterministic Ranking:** Balance importance & recency with a configurable scoring algorithm; support on-the-fly reordering via APIs.
+* 🔍 **Searchable Storage:** Persist full event metadata, embeddings, and scores in a vector database for fast semantic search.
+* 🚨 **Anomaly Detection:** Automatically detect and flag unusual or malformed events.
+* 📈 **High Scalability:** Built on NATS JetStream and Kubernetes auto-scaling to serve millions of users with minimal latency.
+* 🖥️ **Interactive Dashboard:** List, filter, rerank, delete events and sources, and visualize feeds in real time through a web UI.
+
+---
+
+## Architecture
+
+For a detailed view of the system design and data flows, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+---
+
+## 🚀 Installation
+
+> *To be completed: prerequisites, Helm charts, Docker Compose commands, etc.*
+
+---
+
+## ⚠️ Known Issues & Troubleshooting
+
+> *To be completed: common pitfalls, configuration tips, logging and metrics guidance.*
+
+---
+
+## 🚧 Next Steps
+
+> *To be completed: bonus features, advanced filtering modules, extended monitoring strategies.*
+
+---
+
+> Powered by ❤️ for intelligent, AI-driven insights!
