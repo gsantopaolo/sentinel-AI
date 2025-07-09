@@ -1,0 +1,16 @@
+syntax = "proto3";
+package com.cb_ai;
+import "target-coordinates.proto";
+
+message RembgData {
+  string user_id = 1;
+  int32 project_id = 2;
+  string tile_id = 3;
+  string image_url = 4;
+
+  TargetCoordinates target_coordinates = 5;
+  float scale = 6;
+
+  string signalr_connection_id = 7;
+  string origin_env = 8;
+}

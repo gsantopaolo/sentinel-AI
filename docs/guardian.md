@@ -1,7 +1,8 @@
 
 
 # Guardian
-Guardian is a **dedicated dead letter queue handler service**. This service focuses solely on handling messages that have exceeded their maximum delivery attempts. 
+Guardian is a **dedicated dead letter queue handler service**. This service focuses solely on 
+handling messages that have exceeded their maximum delivery attempts. 
 
 ## This service is responsible for:
 

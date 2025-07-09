@@ -16,7 +16,7 @@ An **event-driven**, **microservice** platform for real-time feed ingestion, fil
 
 ## Architecture
 
-For a detailed view of the system design and data flows, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For a detailed view of the system design and data flows, see [the architecture documentation](docs/architecture.md).
 
 ---
 
