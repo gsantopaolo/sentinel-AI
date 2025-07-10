@@ -109,19 +109,19 @@ sequenceDiagram
 The internal processing of a `raw.events` message within the `filter` service follows these steps:
 
 ```mermaid
-graph TD
-    A[Start: Receive raw.events message] --> B{Parse RawEvent Protobuf};
-    B --> C[Extract Event Content];
-    C --> D{Call LLM for Relevance (relevance_prompt)};
-    D -- LLM Response: IRRELEVANT --> E[Log: 🗑️ Event deemed irrelevant. Skipping.];
-    D -- LLM Response: RELEVANT/POTENTIALLY_RELEVANT --> F{Call LLM for Categories (category_prompt)};
-    F --> G[Generate Embeddings];
-    G --> H[Upsert Event to Qdrant (with embeddings, categories, relevance)];
-    H --> I[Construct FilteredEvent Protobuf];
-    I --> J[Publish FilteredEvent to NATS];
-    J --> K[Acknowledge raw.events message];
-    E --> K;
-    K --> L[End];
+flowchart TD
+    A["Start: Receive raw.events message"] --> B{"Parse RawEvent Protobuf"}
+    B --> C["Extract Event Content"]
+    C --> D{"Call LLM for Relevance (relevance_prompt)"}
+    D -->|LLM Response: IRRELEVANT| E["Log: 🗑️ Event deemed irrelevant. Skipping."]
+    D -->|LLM Response: RELEVANT/POTENTIALLY_RELEVANT| F{"Call LLM for Categories (category_prompt)"}
+    F --> G["Generate Embeddings"]
+    G --> H["Upsert Event to Qdrant (with embeddings, categories, relevance)"]
+    H --> I["Construct FilteredEvent Protobuf"]
+    I --> J["Publish FilteredEvent to NATS"]
+    J --> K["Acknowledge raw.events message"]
+    E --> K
+    K --> L["End"]
 ```
 
 ### Key Components and Dependencies

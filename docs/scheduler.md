@@ -65,12 +65,12 @@ sequenceDiagram
 The internal processing within the `scheduler` service for a new source event:
 
 ```mermaid
-graph TD
-    A[Start: Receive new.source message] --> B{Parse NewSource Protobuf};
-    B --> C[Extract Source Details];
-    C --> D[Log: ✉️ Received new source event];
-    D --> E[Acknowledge new.source message];
-    E --> F[End];
+flowchart TD
+    A["Start: Receive new.source message"] --> B{"Parse NewSource Protobuf"}
+    B --> C["Extract Source Details"]
+    C --> D["Log: ✉️ Received new source event"]
+    D --> E["Acknowledge new.source message"]
+    E --> F["End"]
 ```
 
 ### Key Components and Dependencies

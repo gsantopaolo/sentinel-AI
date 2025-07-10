@@ -103,23 +103,22 @@ sequenceDiagram
 
 The internal processing of a `filtered.events` message within the `ranker` service follows these steps:
 
-```mermaid
-graph TD
-    A[Start: Receive filtered.events message] --> B{Parse FilteredEvent Protobuf};
-    B --> C[Extract Event Content, Categories, Timestamp];
-    C --> D[Calculate Importance Score];
-    D --> E[Calculate Recency Score];
-    E --> F[Calculate Final Score];
-    F --> G{Retrieve Event from Qdrant};
-    G -- Event Found --> H[Update Event Payload with Scores];
-    G -- Event Not Found --> I[Log Warning: Event not in Qdrant];
-    H --> J[Upsert Updated Event to Qdrant];
-    J --> K[Construct RankedEvent Protobuf];
-    K --> L[Publish RankedEvent to NATS];
-    L --> M[Acknowledge filtered.events message];
-    M --> N[End];
-    I --> N;
-```
+flowchart TD
+    A["Start: Receive filtered.events message"] --> B{"Parse FilteredEvent Protobuf"}
+    B --> C["Extract Event Content, Categories, Timestamp"]
+    C --> D["Calculate Importance Score"]
+    D --> E["Calculate Recency Score"]
+    E --> F["Calculate Final Score"]
+    F --> G{"Retrieve Event from Qdrant"}
+    G -->|Event Found| H["Update Event Payload with Scores"]
+    G -->|Event Not Found| I["Log Warning: Event not in Qdrant"]
+    H --> J["Upsert Updated Event to Qdrant"]
+    J --> K["Construct RankedEvent Protobuf"]
+    K --> L["Publish RankedEvent to NATS"]
+    L --> M["Acknowledge filtered.events message"]
+    M --> N["End"]
+    I --> N
+
 
 ### Key Components and Dependencies
 
