@@ -6,10 +6,6 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-readiness_time_out = int(os.getenv('READINESS_TIME_OUT', 500))
-
-
 class ReadinessProbe:
     _instance = None
 
@@ -18,15 +14,16 @@ class ReadinessProbe:
             cls._instance = super(ReadinessProbe, cls).__new__(cls, *args, **kwargs)
         return cls._instance
 
-    def __init__(self):
+    def __init__(self, readiness_time_out: int = 500):
         if not hasattr(self, 'initialized'):  # Ensure the logger is only initialized once
             self.logger = logging.getLogger(self.__class__.__name__)
             self.last_seen = datetime.utcnow()
+            self.readiness_time_out = readiness_time_out
             self.initialized = True
 
     def is_service_ready(self):
         # Check if the difference between the current time and last_seen is more than the readiness timeout
-        if datetime.utcnow() - self.last_seen > timedelta(seconds=readiness_time_out):
+        if datetime.utcnow() - self.last_seen > timedelta(seconds=self.readiness_time_out):
             return False
         return True
 
@@ -52,7 +49,7 @@ class ReadinessProbe:
                     self.end_headers()
                     self.wfile.write(b"Service Unavailable")
                     self.logger.error(f"❌ /healthz response 503 - this means the service didn't update_last_seen for "
-                                      f"more than {readiness_time_out} seconds ")
+                                      f"more than {self.readiness_probe.readiness_time_out} seconds ")
             else:
                 self.send_response(404)
                 self.end_headers()

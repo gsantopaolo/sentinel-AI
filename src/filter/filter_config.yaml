@@ -1,0 +1,40 @@
+llm_config:
+  provider: "openai" # or "anthropic"
+  model_name: "gpt-4o-mini" # or "claude-3-haiku-20240307"
+  api_key_env_var: "OPENAI_API_KEY" # Environment variable name for the API key
+
+filtering_rules:
+  relevance_prompt: |
+    You are an expert in IT news analysis. Your task is to determine if the following news article is relevant to an IT manager.
+    Consider topics such as cybersecurity, cloud computing, network infrastructure, software development, data management, IT strategy, and compliance.
+    Respond with "RELEVANT" if the article is highly relevant, "POTENTIALLY_RELEVANT" if it has some relevance but might require further review, and "IRRELEVANT" otherwise.
+    ---
+    Article: {article_content}
+    ---
+    Relevance:
+  
+  category_prompt: |
+    Categorize the following IT news article into one or more of these categories: [Cybersecurity, Cloud Computing, Network Infrastructure, Software Development, Data Management, IT Strategy, Compliance, Other].
+    Respond with a comma-separated list of categories. If no category fits, respond with "Other".
+    ---
+    Article: {article_content}
+    ---
+    Categories:
+
+  keywords:
+    include:
+      - "cybersecurity"
+      - "cloud"
+      - "network"
+      - "data breach"
+      - "AI"
+      - "machine learning"
+      - "devops"
+      - "kubernetes"
+      - "security"
+      - "vulnerability"
+    exclude:
+      - "sports"
+      - "entertainment"
+      - "celebrity"
+      - "fashion"

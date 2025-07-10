@@ -9,7 +9,7 @@ from nats.aio.msg import Msg
 from nats.js.api import ConsumerConfig, StreamConfig, AckPolicy, DeliverPolicy, RetentionPolicy
 from nats.js.errors import BadRequestError
 
-from lib_py.middlewares.readiness_probe import ReadinessProbe
+from src.lib_py.middlewares.readiness_probe import ReadinessProbe
 
 
 class JetStreamEventSubscriber:

@@ -1,2 +1,4 @@
 nats-py
 python-dotenv
+APScheduler
+protobuf

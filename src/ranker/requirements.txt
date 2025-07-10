@@ -1,9 +1,6 @@
-fastapi
-uvicorn
-requests
+nats-py
 python-dotenv
 protobuf
-nats-py
 qdrant-client
 sentence-transformers
-SQLAlchemy
+pyyaml

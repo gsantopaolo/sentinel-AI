@@ -48,10 +48,13 @@ if __name__ == "__main__":
     test_endpoint("GET", "/sources")
 
     print("\n--- Testing POST /sources ---")
-    test_endpoint("POST", "/sources")
+    test_endpoint("POST", "/sources", data={"name": "Test Source", "type": "RSS"})
+
+    print("\n--- Testing GET /sources/1 ---")
+    test_endpoint("GET", "/sources/1")
 
     print("\n--- Testing PUT /sources/1 ---")
-    test_endpoint("PUT", "/sources/1")
+    test_endpoint("PUT", "/sources/1", data={"name": "Updated Source", "is_active": False})
 
     print("\n--- Testing DELETE /sources/1 ---")
     test_endpoint("DELETE", "/sources/1")

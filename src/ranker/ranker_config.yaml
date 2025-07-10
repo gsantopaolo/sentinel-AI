@@ -1,0 +1,17 @@
+ranking_parameters:
+  importance_weight: 0.7
+  recency_weight: 0.3
+
+category_importance_scores:
+  Cybersecurity: 1.0
+  Cloud Computing: 0.9
+  Network Infrastructure: 0.8
+  Software Development: 0.7
+  Data Management: 0.6
+  IT Strategy: 0.5
+  Compliance: 0.4
+  Other: 0.1
+
+recency_decay:
+  half_life_hours: 72 # Event loses half its recency score every 72 hours
+  max_score: 100.0 # Max score for a brand new event

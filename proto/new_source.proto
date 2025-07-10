@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package sentinel_ai;
+
+message NewSource {
+  int32 id = 1;
+  string name = 2;
+  string type = 3;
+  string config_json = 4; // Store config as JSON string
+  bool is_active = 5;
+}

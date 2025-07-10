@@ -4,7 +4,7 @@ FROM python:3.12.10-slim-bookworm
 WORKDIR /app
 
 # Copy the requirements.txt first to leverage Docker cache
-COPY guardian/requirements.txt /app/
+COPY api/requirements.txt /app/
 
 # Install dependencies and clean up
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -17,11 +17,13 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && rm -rf /root/.cache
 
 # Copy the rest of the application code
-COPY guardian/guardian_service.py /app/guardian/guardian_service.py
+COPY api/main.py /app/api/main.py
 COPY lib_py /app/lib_py
 
 # Set the PYTHONPATH environment variable
-ENV PYTHONPATH="/app"
+ENV PYTHONPATH="/app/api"
 
-# Command to run your application
-CMD ["python", "guardian/guardian_service.py"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8081", "--reload"]
+
+
+

@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package sentinel_ai;
+
+message RawEvent {
+  string id = 1;
+  string title = 2;
+  string content = 3;
+  string timestamp = 4;
+  string source = 5;
+}

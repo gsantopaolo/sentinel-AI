@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package sentinel_ai;
+
+message RemovedSource {
+  int32 id = 1;
+}
