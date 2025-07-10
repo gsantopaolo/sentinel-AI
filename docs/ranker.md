@@ -5,7 +5,7 @@
 The `ranker` service is a crucial component of the Sentinel AI platform, responsible for intelligently ordering news events based on their relevance and timeliness. It acts as an intermediary between the `filter` service, which identifies and enriches relevant events, and downstream services like the `api` and `inspector`, which consume ranked data.
 
 Its primary function is to:
-1.  **Subscribe** to `filtered.events` from the `filter` service.
+1.  **Subscribe** to `filtered.events` from the [`filter` service](filter.md).
 2.  **Compute** a deterministic ranking score for each event by balancing its "importance" (derived from LLM-based categorization) and "recency" (how recently it occurred).
 3.  **Persist** these calculated scores back into Qdrant, enriching the event's metadata.
 4.  **Publish** the newly ranked events as `ranked.events` to a NATS stream for consumption by other services.
