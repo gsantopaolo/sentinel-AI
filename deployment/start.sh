@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Exit immediately if a command exits with a non-zero status.
-set -e
+set -euo pipefail
 
 # Source the .env file
 if [ -f "deployment/.env" ]; then
@@ -11,6 +11,21 @@ else
   echo ".env file not found. Please create one based on .env.example. Exiting."
   exit 1
 fi
+
+# --- Start: Specific check for problematic variables ---
+# This check is added because complex multi-line variables (like CB_ENVS from another project)
+# can cause syntax errors when sourced by bash if not properly escaped or handled.
+# If you copied content from 'excluded/deployment/.env' into your 'deployment/.env',
+# please ensure such variables are removed or correctly formatted for bash.
+if [ -n "${CB_ENVS:-}" ]; then
+  echo "
+⚠️ WARNING: The 'CB_ENVS' variable was found in your deployment/.env file."
+  echo "This variable contains complex multi-line content that can cause syntax errors."
+  echo "It is likely from another project and is NOT needed for Sentinel AI."
+  echo "Please remove 'CB_ENVS' from your deployment/.env file and try again."
+  exit 1
+fi
+# --- End: Specific check for problematic variables ---
 
 # Function to ensure directory exists and has correct permissions
 ensure_dir() {
@@ -47,33 +62,28 @@ check_and_create_network "backend-network"
 
 # Bring up Docker Compose stacks
 
-# Traefik
+# Traefik & portainer
 docker compose \
-  -p sentinel-traefik \
+  -p sentinel-infra \
   --env-file deployment/.env \
-  -f deployment/docker-compose.traefik.yml \
-  "$@"
-
-# Portainer
-docker compose \
-  -p sentinel-portainer \
-  --env-file deployment/.env \
-  -f deployment/docker-compose.portainer.yml \
-  "$@"
+  -f deployment/docker-compose.infra.yml \
+  up -d "$@"
 
 # Base services (NATS, Qdrant, Postgres)
 docker compose \
-  -p sentinel-base \
+  -p sentinel-db \
   --env-file deployment/.env \
-  -f deployment/docker-compose.base.yml \
-  "$@"
+  -f deployment/docker-compose.db.yml \
+  up -d "$@"
 
-# Sentinel AI microservices
+# Sentinel AI microservices (including web)
 docker compose \
   -p sentinel-services \
   --env-file deployment/.env \
   -f deployment/docker-compose.services.yml \
-  "$@"
+  up -d "$@"
+
+
 
 
 

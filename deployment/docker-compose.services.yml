@@ -1,12 +1,11 @@
-version: '3.8'
 
 networks:
   frontend-network:
     external: true
-    name: frontend-network
+    name: sentinel-frontend-network
   backend-network:
     external: true
-    name: backend-network
+    name: sentinel-backend-network
 
 services:
   api:
@@ -137,7 +136,7 @@ services:
     restart: unless-stopped
     networks:
       - backend-network
-      -
+
   web:
     build:
       context: ../

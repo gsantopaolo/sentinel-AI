@@ -4,7 +4,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Copy the requirements.txt first to leverage Docker cache
-COPY src/guardian/requirements.txt /app/
+COPY src/web/requirements.txt /app/
 
 # Install dependencies and clean up
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -17,8 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && rm -rf /root/.cache
 
 # Copy the rest of the application code
-COPY src/guardian/main.py /app/src/guardian/main.py
-COPY src/lib_py /app/src/lib_py
+COPY src/web/app.py /app/src/web/app.py
 
 # Set the PYTHONPATH environment variable
 ENV PYTHONPATH="/app"
@@ -26,4 +25,4 @@ ENV PYTHONPATH="/app"
 ENV PYTHONUNBUFFERED=1
 
 # Command to run your application
-CMD ["python", "src/guardian/main.py"]
+CMD ["streamlit", "run", "src/web/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
