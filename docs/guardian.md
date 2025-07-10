@@ -1,45 +1,62 @@
+# Guardian Service
 
+## Overview
 
-# Guardian
-Guardian is a **dedicated dead letter queue handler service**. This service focuses solely on 
-handling messages that have exceeded their maximum delivery attempts. 
+The `guardian_service` is a component of the Sentinel AI platform that is currently under development. Its name suggests a role in monitoring, security, or system health, but its specific responsibilities are not yet fully defined.
 
-## This service is responsible for:
+At present, the service is a placeholder, demonstrating the basic structure of a Sentinel AI microservice, including logging, environment variable loading, and a readiness probe.
 
-- **Subscribing to the advisory subjects** that JetStream emits when messages reach their maximum delivery attempts.
-- **Parsing the advisory messages** to extract information about the failed message, such as the stream name, consumer name, and sequence number.
-- **Retrieving the failed message** from the original stream using the sequence number.
-- **Logging or processing the failed message** as required by the application logic.
-- **Deleting or acknowledging the failed message** from the original stream to keep it clean.
-- **Optionally moving the failed message** to a separate DLQ stream for further analysis or reprocessing.
+## Core Functionality
 
+The `guardian_service` is a minimal, event-driven component. Its current implementation is limited to starting up, initializing a readiness probe, and logging its status. It does not yet subscribe to or publish any NATS events, nor does it interact with other services in the platform.
 
-## Advantages of this approach:
+### 1. Readiness Probe
 
-- **Separation of concerns:** Keeps the DLQ handling logic separate from the main application logic, making the system easier to maintain and scale.
-- **Centralized error handling:** Provides a single place to monitor and manage all failed messages.
-- **Resource optimization:** Allows main services to focus on processing valid messages without the overhead of DLQ management.
-- **Scalability:** Enables independent scaling of the DLQ handler based on the volume of failed messages.
+The service includes a readiness probe that exposes a `/healthz` endpoint. This allows a container orchestration system (like Kubernetes) to monitor the service's health and restart it if it becomes unresponsive.
 
+## Why YAML Configuration?
 
-## How it works:
+The `guardian_service` does not currently utilize a YAML configuration file. Its behavior is entirely determined by its source code and environment variables. However, as the service's functionality is developed, a YAML configuration could be introduced to manage settings such as:
 
-- **Connection to NATS:**
-  - The `DeadLetterQueueHandler` class initializes a connection to the NATS server and creates a JetStream context.
-  - Connection parameters are loaded from environment variables for flexibility.
+*   **Monitoring thresholds:** Defining limits for system metrics (e.g., CPU usage, memory consumption) that would trigger alerts.
+*   **Security policies:** Specifying rules for access control, rate limiting, or other security-related features.
+*   **Alerting configurations:** Providing details for sending notifications (e.g., email addresses, webhook URLs) when specific events occur.
 
-- **Subscription to Advisory Subject:**
-  - The service subscribes to the advisory subject `"$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>"` to listen for any message that has exceeded its maximum delivery attempts across all streams and consumers.
+## Technical Deep Dive
 
-- **Processing Advisories:**
-  - The `process_advisory` method parses the advisory message to extract the stream name, consumer name, and stream sequence number.
-  - It retrieves the failed message from the stream using `self.js.get_msg(stream, stream_seq)`.
-  - The failed message is logged for auditing or debugging purposes.
-  - The message is deleted from the original stream using `self.js.delete_msg(stream, stream_seq)` to keep the stream clean.
+The `guardian_service` is implemented in Python, using `asyncio` for asynchronous operations.
 
-- **Optional DLQ Stream:**
-  - You can uncomment and modify the line `await self.js.publish("DLQ_STREAM", failed_msg)` to move the failed message to a dedicated DLQ stream for further processing or analysis.
+### Data Flow and Processing Sequence
 
-- **Running the Service:**
-  - The `run` method sets up the connection and subscriptions, then enters an infinite loop to keep the service running.
-  - Graceful shutdown is handled by catching `KeyboardInterrupt` and closing the NATS connection.
+As the `guardian_service` does not yet interact with other services, its data flow is minimal. The following diagram illustrates its startup sequence:
+
+```mermaid
+sequenceDiagram
+    participant Guardian as Guardian Service
+    participant System as Operating System
+
+    System->>Guardian: Start process
+    Guardian->>Guardian: Initialize logging
+    Guardian->>Guardian: Start readiness probe
+    Guardian->>Guardian: Enter main loop
+```
+
+### Internal Logic Flow
+
+The internal logic of the `guardian_service` is straightforward:
+
+```mermaid
+flowchart TD
+    A["Start"] --> B{"Initialize Logging"};
+    B --> C{"Start Readiness Probe"};
+    C --> D{"Enter Main Loop"};
+    D --> E{"Wait for Shutdown Signal"};
+    E --> F["Shutdown"];
+```
+
+### Key Components and Dependencies
+
+*   **`src/lib_py/middlewares/ReadinessProbe`**: Ensures the service's health can be monitored.
+*   **`python-dotenv`**: For loading environment variables from `.env` files.
+
+This overview provides a clear understanding of the `guardian_service`'s current state and its potential role within the Sentinel AI platform.
