@@ -61,14 +61,14 @@ sequenceDiagram
 The internal processing within the `connector` service for a `poll.source` event:
 
 ```mermaid
-graph TD
-    A[Start: Receive poll.source message] --> B{Parse PollSource Protobuf};
-    B --> C[Extract Source Details];
-    C --> D[Simulate Data Fetching (Generate Fake News)];
-    D --> E[Construct RawEvent Protobuf Message];
-    E --> F[Publish RawEvent to NATS];
-    F --> G[Acknowledge poll.source message];
-    G --> H[End];
+flowchart TD
+    A["Start: Receive poll.source message"] --> B{"Parse PollSource Protobuf"}
+    B --> C["Extract Source Details"]
+    C --> D["Simulate Data Fetching (Generate Fake News)"]
+    D --> E["Construct RawEvent Protobuf Message"]
+    E --> F["Publish RawEvent to NATS"]
+    F --> G["Acknowledge poll.source message"]
+    G --> H["End"]
 ```
 
 ### Key Components and Dependencies
