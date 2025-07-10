@@ -34,8 +34,14 @@ For a detailed view of the system design and data flows, see [the architecture d
 
 ## 🚧 Next Steps
 
-> *To be completed: bonus features, advanced filtering modules, extended monitoring strategies.*
 
+> *To be completed: bonus features, advanced filtering modules, extended monitoring strategies.*
+- Scheduler: for full scalability change APScheduler
+- Improved web UI
+- Implement Authentik to add user access with existing organization's credentials 
+- Creat the HELM chart to deploy the cluster on K8s
 ---
+
+> check out [my blog](https://genmind.ch)
 
 > Powered by ❤️ for intelligent, AI-driven insights!
