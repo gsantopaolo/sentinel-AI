@@ -28,7 +28,7 @@ The `api` service provides a comprehensive set of endpoints for managing data so
 
 ## Why YAML Configuration?
 
-The `api` service itself does not directly use a YAML configuration file for its core logic or LLM parameters. Its behavior is primarily defined by its FastAPI routes and its interaction with other services. However, it's important to note that the data it exposes (e.g., filtered and ranked news) is a result of processing by other services (`filter`, `ranker`) that *do* heavily rely on external YAML configurations for their LLM prompts, filtering rules, and ranking algorithms. This design ensures that the `api` remains a stable interface while the underlying business logic can be dynamically tuned and updated via configuration in other services.
+The `api` service itself does not directly use a YAML configuration file for its core logic or LLM parameters. Its behavior is primarily defined by its FastAPI routes and its interaction with other services. However, it's important to note that the data it exposes (e.g., filtered and ranked news) is a result of processing by other services ([`filter`](./filter.md), [`ranker`](./ranker.md)) that *do* heavily rely on external YAML configurations for their LLM prompts, filtering rules, and ranking algorithms. This design ensures that the `api` remains a stable interface while the underlying business logic can be dynamically tuned and updated via configuration in other services.
 
 ## Technical Deep Dive
 

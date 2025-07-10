@@ -14,10 +14,16 @@ An **event-driven**, **microservice** platform for real-time feed ingestion, fil
 
 ---
 
-## Architecture
+## Documentation
 
-For a detailed view of the system design and data flows, see [the architecture documentation](docs/architecture.md).
-
+- [**Overview**](docs/overview.md): A high-level summary of the platform's requirements and how they map to the different services.
+- [**Architecture**](docs/architecture.md): A detailed look at the microservices architecture, data flows, and technologies used.
+- [**API Service**](docs/api.md): Describes the main entry point for the system, responsible for ingestion, source management, and data retrieval.
+- [**Scheduler Service**](docs/scheduler.md): Describes how the platform manages and schedules data collection from sources.
+- [**Connector Service**](docs/connector.md): Explains how the platform fetches and normalizes data from external sources.
+- [**Filter Service**](docs/filter.md): Details the intelligent filtering and enrichment process using LLMs.
+- [**Ranker Service**](docs/ranker.md): Explains the configurable ranking algorithm that scores events based on importance and recency.
+- [**Guardian Service**](docs/guardian.md): Outlines the role of the system's monitoring and health-checking component.
 ---
 
 ## 🚀 Installation

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `ranker` service is a crucial component of the Sentinel AI platform, responsible for intelligently ordering news events based on their relevance and timeliness. It acts as an intermediary between the `filter` service, which identifies and enriches relevant events, and downstream services like the `api` and `inspector`, which consume ranked data.
+The `ranker` service is a crucial component of the Sentinel AI platform, responsible for intelligently ordering news events based on their relevance and timeliness. It acts as an intermediary between the `filter` service, which identifies and enriches relevant events, and downstream services like the [`api`](./api.md) and `inspector`, which consume ranked data.
 
 Its primary function is to:
 1.  **Subscribe** to `filtered.events` from the [`filter` service](filter.md).

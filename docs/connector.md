@@ -12,7 +12,7 @@ Its core responsibilities include:
 
 ## Core Functionality: Data Ingestion and Normalization
 
-The `connector` service is an event-driven component that reacts to polling requests from the `scheduler` service. For now, it simulates data fetching and normalization by generating fake news events.
+The `connector` service is an event-driven component that reacts to polling requests from the [`scheduler`](./scheduler.md) service. For now, it simulates data fetching and normalization by generating fake news events.
 
 ### 1. Reacting to Poll Requests (`poll.source`)
 

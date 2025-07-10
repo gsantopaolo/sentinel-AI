@@ -39,7 +39,7 @@ filtering_rules:
 
 ### 2. Categorization with LLM
 
-For events that pass the relevance filter, the service further enriches them by assigning categories. Another LLM prompt is used to classify the event into one or more predefined categories, providing structured metadata that can be used by downstream services (like the `ranker`).
+For events that pass the relevance filter, the service further enriches them by assigning categories. Another LLM prompt is used to classify the event into one or more predefined categories, providing structured metadata that can be used by downstream services (like the [`ranker`](./ranker.md)).
 
 **Example Configuration (`filter_config.yaml` - Category Prompt):**
 ```yaml
