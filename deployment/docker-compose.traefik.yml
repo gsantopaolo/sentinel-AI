@@ -1,0 +1,44 @@
+version: '3.8'
+
+networks:
+  frontend-network:
+    external: true
+    name: frontend-network
+  backend-network:
+    external: true
+    name: backend-network
+
+services:
+  traefik:
+    image: traefik:v2.11
+    container_name: traefik
+    ports:
+      - "${TRAEFIK_HTTP_PORT}:80"
+      - "${TRAEFIK_HTTPS_PORT}:443"
+      - "${TRAEFIK_DASHBOARD_PORT}:8080" # Traefik Dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-certs:/etc/traefik/acme
+    command:
+      - --api.dashboard=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.myresolver.acme.tlschallenge=true
+      - --certificatesresolvers.myresolver.acme.email=your-email@example.com # Replace with your email
+      - --certificatesresolvers.myresolver.acme.storage=/etc/traefik/acme/acme.json
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --log.level=INFO
+    restart: unless-stopped
+    networks:
+      - frontend-network
+      - backend-network # To route to backend services
+
+volumes:
+  traefik-certs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH}/traefik-certs

@@ -1,0 +1,158 @@
+version: '3.8'
+
+networks:
+  frontend-network:
+    external: true
+    name: frontend-network
+  backend-network:
+    external: true
+    name: backend-network
+
+services:
+  api:
+    build:
+      context: ../
+      dockerfile: src/api/Dockerfile
+    container_name: sentinel-api
+    env_file:
+      - ../config/api.env
+    environment:
+      NATS_URL: ${NATS_URL}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
+      API_READINESS_TIME_OUT: ${API_READINESS_TIME_OUT}
+    restart: unless-stopped
+    networks:
+      - backend-network
+      - frontend-network # For Traefik exposure
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api`)"
+      - "traefik.http.middlewares.api-stripprefix.stripprefix.prefixes=/api"
+      - "traefik.http.routers.api.middlewares=api-stripprefix"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
+
+  connector:
+    build:
+      context: ../
+      dockerfile: src/connector/Dockerfile
+    container_name: sentinel-connector
+    environment:
+      NATS_URL: ${NATS_URL}
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
+      CONNECTOR_READINESS_TIME_OUT: ${CONNECTOR_READINESS_TIME_OUT}
+    restart: unless-stopped
+    networks:
+      - backend-network
+
+  filter:
+    build:
+      context: ../
+      dockerfile: src/filter/Dockerfile
+    container_name: sentinel-filter
+    volumes:
+      - ../src/filter/filter_config.yaml:/app/filter_config.yaml
+    environment:
+      NATS_URL: ${NATS_URL}
+      QDRANT_HOST: ${QDRANT_HOST}
+      QDRANT_PORT: ${QDRANT_PORT}
+      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME}
+      EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME}
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
+      READINESS_TIME_OUT: ${FILTER_READINESS_TIME_OUT}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    restart: unless-stopped
+    networks:
+      - backend-network
+
+  ranker:
+    build:
+      context: ../
+      dockerfile: src/ranker/Dockerfile
+    container_name: sentinel-ranker
+    volumes:
+      - ../src/ranker/ranker_config.yaml:/app/src/ranker/ranker_config.yaml
+    environment:
+      NATS_URL: ${NATS_URL}
+      QDRANT_HOST: ${QDRANT_HOST}
+      QDRANT_PORT: ${QDRANT_PORT}
+      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME}
+      EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME}
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
+      READINESS_TIME_OUT: ${RANKER_READINESS_TIME_OUT}
+    restart: unless-stopped
+    networks:
+      - backend-network
+
+  inspector:
+    build:
+      context: ../
+      dockerfile: src/inspector/Dockerfile
+    container_name: sentinel-inspector
+    volumes:
+      - ../src/inspector/inspector_config.yaml:/app/src/inspector/inspector_config.yaml
+    environment:
+      NATS_URL: ${NATS_URL}
+      QDRANT_HOST: ${QDRANT_HOST}
+      QDRANT_PORT: ${QDRANT_PORT}
+      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME}
+      EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME}
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
+      READINESS_TIME_OUT: ${INSPECTOR_READINESS_TIME_OUT}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    restart: unless-stopped
+    networks:
+      - backend-network
+
+  scheduler:
+    build:
+      context: ../
+      dockerfile: src/scheduler/Dockerfile
+    container_name: sentinel-scheduler
+    environment:
+      NATS_URL: ${NATS_URL}
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
+      SCHEDULER_READINESS_TIME_OUT: ${SCHEDULER_READINESS_TIME_OUT}
+    restart: unless-stopped
+    networks:
+      - backend-network
+
+  guardian:
+    build:
+      context: ../
+      dockerfile: src/guardian/Dockerfile
+    container_name: sentinel-guardian
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
+      GUARDIAN_READINESS_TIME_OUT: ${GUARDIAN_READINESS_TIME_OUT}
+    restart: unless-stopped
+    networks:
+      - backend-network
+      -
+  web:
+    build:
+      context: ../
+      dockerfile: src/web/Dockerfile
+    container_name: sentinel-web
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
+    restart: unless-stopped
+    networks:
+      - frontend-network # For Traefik exposure
+      - backend-network # To communicate with API
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=PathPrefix(`/web`)"
+      - "traefik.http.middlewares.web-stripprefix.stripprefix.prefixes=/web"
+      - "traefik.http.routers.web.middlewares=web-stripprefix"
+      - "traefik.http.services.web.loadbalancer.server.port=8501" # Default Streamlit port
