@@ -84,14 +84,15 @@ The internal processing within the `api` service for a source creation request:
 
 ```mermaid
 flowchart TD
-    A[Start: Receive POST /sources request] --> B{Validate Input<br/>name, type, config}
-    B -->|Valid| C[Call SourceLogic.create_source(db_session, ...)]
-    B -->|Invalid| G[Log Error]
-    C -->|Success| D[Construct NewSource Protobuf Message]
+    A["Start: Receive POST /sources request"] --> B{"Validate Input<br/>name, type, config"}
+    B -->|Valid| C["Call SourceLogic.create_source(db_session, ...)"]
+    B -->|Invalid| G["Log Error"]
+    C -->|Success| D["Construct NewSource Protobuf Message"]
     C -->|Failure| G
-    D --> E[Publish NewSource to NATS]
-    E --> F[Return HTTP 201 Created<br/>with new source data]
-    G --> H[Return HTTP 500 Internal Server Error]
+    D --> E["Publish NewSource to NATS"]
+    E --> F["Return HTTP 201 Created<br/>with new source data"]
+    G --> H["Return HTTP 500 Internal Server Error"]
+
 ```
 
 ### Key Components and Dependencies
