@@ -85,7 +85,7 @@ The internal processing within the `api` service for a source creation request:
 ```mermaid
 flowchart TD
     A[Start: Receive POST /sources request] --> B{Validate Input<br/>name, type, config}
-    B -->|Valid| C[Call SourceLogic.create_source(db_session, …)]
+    B -->|Valid| C[Call SourceLogic.create_source(db_session, ...)]
     B -->|Invalid| G[Log Error]
     C -->|Success| D[Construct NewSource Protobuf Message]
     C -->|Failure| G
