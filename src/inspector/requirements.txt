@@ -1,0 +1,5 @@
+nats-py
+qdrant-client
+pyyaml
+python-dotenv
+asyncio

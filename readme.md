@@ -8,7 +8,7 @@ An **event-driven**, **microservice** platform for real-time feed ingestion, fil
 * 🧹 **Smart Filtering:** Apply custom relevance rules or plug in ML models to filter events.
 * ⚖️ **Deterministic Ranking:** Balance importance & recency with a configurable scoring algorithm; support on-the-fly reordering via APIs.
 * 🔍 **Searchable Storage:** Persist full event metadata, embeddings, and scores in a vector database for fast semantic search.
-* 🚨 **Anomaly Detection:** Automatically detect and flag unusual or malformed events.
+* 🚨 [**Anomaly Detection**](docs/inspector.md): Automatically detect and flag unusual or malformed events.
 * 📈 **High Scalability:** Built on NATS JetStream and Kubernetes auto-scaling to serve millions of users with minimal latency.
 * 🖥️ **Interactive Dashboard:** List, filter, rerank, delete events and sources, and visualize feeds in real time through a web UI.
 
@@ -23,6 +23,7 @@ An **event-driven**, **microservice** platform for real-time feed ingestion, fil
 - [**Connector Service**](docs/connector.md): Explains how the platform fetches and normalizes data from external sources.
 - [**Filter Service**](docs/filter.md): Details the intelligent filtering and enrichment process using LLMs.
 - [**Ranker Service**](docs/ranker.md): Explains the configurable ranking algorithm that scores events based on importance and recency.
+- [**Inspector Service**](docs/inspector.md): Describes the service responsible for detecting and flagging anomalous or fake news events.
 - [**Guardian Service**](docs/guardian.md): Outlines the role of the system's monitoring and health-checking component.
 ---
 

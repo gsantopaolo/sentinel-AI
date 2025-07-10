@@ -5,7 +5,7 @@
 The `filter` service is a critical component of the Sentinel AI platform, acting as the first line of defense and enrichment for incoming news events. Its primary role is to process raw, uncurated events, determine their relevance, and prepare them for subsequent stages of ranking and analysis.
 
 Its core responsibilities include:
-1.  **Subscribe** to `raw.events` from the `connector` service.
+1.  **Subscribe** to `raw.events` from the [`connector` service](./connector.md).
 2.  **Apply Relevance Filters**: Determine if an event is relevant to a specific domain (e.g., IT management) using a Large Language Model (LLM).
 3.  **Enrichment**: If relevant, categorize the event and generate vector embeddings for its content.
 4.  **Persistence**: Store the enriched event data (metadata, LLM-derived attributes, and embeddings) in Qdrant.
@@ -13,11 +13,11 @@ Its core responsibilities include:
 
 ## Core Functionality: Intelligent Filtering and Enrichment
 
-The `filter` service leverages the power of LLMs to perform nuanced content analysis, making it highly adaptable to various domains.
+The [`filter` service](./filter.md) leverages the power of LLMs to perform nuanced content analysis, making it highly adaptable to various domains.
 
 ### 1. Relevance Filtering with LLM
 
-Upon receiving a `raw.event`, the `filter` service first assesses its relevance. This is achieved by sending the event's content to a configured LLM with a specific prompt designed to evaluate its pertinence to a defined context (e.g., an IT manager's interests). Events deemed irrelevant are discarded, reducing noise in the system.
+Upon receiving a `raw.event`, the [`filter` service](./filter.md) first assesses its relevance. This is achieved by sending the event's content to a configured LLM with a specific prompt designed to evaluate its pertinence to a defined context (e.g., an IT manager's interests). Events deemed irrelevant are discarded, reducing noise in the system.
 
 **Example Configuration (`filter_config.yaml` - Relevance Prompt):**
 ```yaml
@@ -54,7 +54,7 @@ For events that pass the relevance filter, the service further enriches them by 
 
 ### 3. Embedding Generation
 
-To enable semantic search and similarity-based operations in Qdrant, the `filter` service generates vector embeddings for the content of each relevant event. This is done using a `SentenceTransformer` model, ensuring that the textual content is converted into a numerical representation that captures its meaning.
+To enable semantic search and similarity-based operations in Qdrant, the [`filter` service](./filter.md) generates vector embeddings for the content of each relevant event. This is done using a `SentenceTransformer` model, ensuring that the textual content is converted into a numerical representation that captures its meaning.
 
 ### 4. Persistence to Qdrant
 
@@ -62,7 +62,7 @@ All relevant and enriched events, including their original metadata, LLM-derived
 
 ## Why YAML Configuration?
 
-The `filter` service's reliance on `filter_config.yaml` is a cornerstone of its flexible design:
+The [`filter` service](./filter.md)'s reliance on `filter_config.yaml` is a cornerstone of its flexible design:
 
 *   **Domain Agnosticism**: By externalizing LLM prompts and filtering rules, the service is not hardcoded to a specific domain (e.g., IT news). It can be repurposed for finance, medical, or any other industry by simply modifying the YAML configuration, without requiring code changes.
 *   **Dynamic Adaptability**: The criteria for relevance and categorization can be updated on the fly by adjusting the prompts and rules in the YAML file, allowing the system to adapt to evolving requirements or new trends.
@@ -71,11 +71,11 @@ The `filter` service's reliance on `filter_config.yaml` is a cornerstone of its 
 
 ## Technical Deep Dive
 
-The `filter` service is implemented as a Python microservice, utilizing asynchronous programming with `asyncio` and NATS JetStream for efficient event processing.
+The [`filter` service](./filter.md) is implemented as a Python microservice, utilizing asynchronous programming with `asyncio` and NATS JetStream for efficient event processing.
 
 ### Data Flow and Processing Sequence
 
-The following sequence diagram illustrates how a raw event is processed by the `filter` service:
+The following sequence diagram illustrates how a raw event is processed by the [`filter` service](./filter.md):
 
 ```mermaid
 sequenceDiagram
@@ -106,7 +106,7 @@ sequenceDiagram
 
 ### Internal Logic Flow
 
-The internal processing of a `raw.events` message within the `filter` service follows these steps:
+The internal processing of a `raw.events` message within the [`filter` service](./filter.md) follows these steps:
 
 ```mermaid
 flowchart TD
@@ -139,4 +139,4 @@ flowchart TD
 *   **`SentenceTransformer`**: Used for generating vector embeddings from text content.
 *   **`PyYAML`**: Used for loading the `filter_config.yaml` file.
 
-This comprehensive overview should provide a clear understanding of the `filter` service's role, its internal workings, and its configurable nature within the Sentinel AI platform.
+This comprehensive overview should provide a clear understanding of the [`filter` service](./filter.md)'s role, its internal workings, and its configurable nature within the Sentinel AI platform.

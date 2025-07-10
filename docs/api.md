@@ -24,11 +24,11 @@ These endpoints are designed to fetch news events. While currently returning moc
 
 ### 3. Source Management (`GET/POST/PUT/DELETE /sources`)
 
-The `api` service provides a comprehensive set of endpoints for managing data sources. These operations interact directly with a PostgreSQL database via the shared `SourceLogic` module. Additionally, creating or deleting a source triggers a NATS event (`new.source` or `removed.source`) to notify other services (like the `scheduler`) about changes in the active data sources.
+The `api` service provides a comprehensive set of endpoints for managing data sources. These operations interact directly with a PostgreSQL database via the shared `SourceLogic` module. Additionally, creating or deleting a source triggers a NATS event (`new.source` or `removed.source`) to notify other services (like the [`scheduler`](./scheduler.md)) about changes in the active data sources.
 
 ## Why YAML Configuration?
 
-The `api` service itself does not directly use a YAML configuration file for its core logic or LLM parameters. Its behavior is primarily defined by its FastAPI routes and its interaction with other services. However, it's important to note that the data it exposes (e.g., filtered and ranked news) is a result of processing by other services ([`filter`](./filter.md), [`ranker`](./ranker.md)) that *do* heavily rely on external YAML configurations for their LLM prompts, filtering rules, and ranking algorithms. This design ensures that the `api` remains a stable interface while the underlying business logic can be dynamically tuned and updated via configuration in other services.
+The `api` service itself does not directly use a YAML configuration file for its core logic or LLM parameters. Its behavior is primarily defined by its FastAPI routes and its interaction with other services. However, it's important to note that the data it exposes (e.g., filtered and ranked news) is a result of processing by other services ([`filter`](./filter.md), [`ranker`](./ranker.md), and [`inspector`](./inspector.md)) that *do* heavily rely on external YAML configurations for their LLM prompts, filtering rules, and ranking algorithms. This design ensures that the `api` remains a stable interface while the underlying business logic can be dynamically tuned and updated via configuration in other services.
 
 ## Technical Deep Dive
 

@@ -1,0 +1,32 @@
+anomaly_detectors:
+  - type: keyword_match
+    parameters:
+      keywords:
+        - "spam"
+        - "test"
+        - "junk"
+
+  - type: content_length
+    parameters:
+      min_length: 50
+      max_length: 10000
+
+  - type: missing_fields
+    parameters:
+      fields:
+        - "title"
+        - "content"
+
+  - type: llm_anomaly_detector
+    parameters:
+      provider: "openai"
+      model_name: "gpt-4o-mini"
+      api_key_env_var: "OPENAI_API_KEY"
+      prompt: |
+        Analyze the following news article for potential anomalies, signs of fake news, or highly unusual content. 
+        Consider the tone, factual consistency (if verifiable from content), and overall coherence. 
+        Respond with "ANOMALY" if you detect a significant anomaly, otherwise respond with "NORMAL".
+        --- 
+        Article: {article_content}
+        ---
+        Analysis:
