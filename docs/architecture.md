@@ -8,74 +8,63 @@ durable streams, this architecture can effortlessly serve millions of users in r
 
 ```mermaid
 flowchart LR
-  %% Left Services (vertical)
-  subgraph ServicesLeft["Services"]
-    direction TB
-    scheduler["scheduler"]:::service
-    connector["connector"]:::service
-    filter["filter"]:::service
-  end
+    %% Left Services (vertical)
+    subgraph ServicesLeft["Services"]
+      direction TB
+      scheduler["scheduler"]:::service
+      connector["connector"]:::service
+      filter["filter"]:::service
+    end
 
-  %% Wide Infrastructure (horizontal)
-  subgraph Infrastructure["Infrastructure"]
-    direction LR
-    NATS["NATS"]:::nats
-    DLQ["Dead-letter Queue"]:::dlq
-    Postgres["Postgres"]:::postgres
-    Qdrant["Qdrant"]:::qdrant
-  end
+    %% Wide Infrastructure (horizontal)
+    subgraph Infrastructure["Infrastructure"]
+      direction LR
+      NATS["NATS"]:::nats
+      DLQ["Dead-letter Queue"]:::dlq
+      Postgres["Postgres"]:::postgres
+      Qdrant["Qdrant"]:::qdrant
+    end
 
-  %% Right Services (vertical)
-  subgraph ServicesRight["Services"]
-    direction TB
-    ranker["ranker"]:::service
-    inspector["inspector"]:::service
-    api["api"]:::service
-    web["web (UI)"]:::service
-    guardian["guardian"]:::service
-  end
+    %% Right Services (vertical)
+    subgraph ServicesRight["Services"]
+      direction TB
+      ranker["ranker"]:::service
+      inspector["inspector"]:::service
+      api["api"]:::service
+      web["web (UI)"]:::service
+      guardian["guardian"]:::service
+    end
 
-  %% Publications: services → infra
-  scheduler -- "poll.source" --> NATS
-  connector -- "normalized → raw.events" --> NATS
-  filter -- "filtered.events" --> NATS
-  filter -- "persist + embeddings" --> Qdrant
+    %% Publications: services → infra
+    scheduler -- "poll.source" --> NATS
+    connector -- "normalized → raw.events" --> NATS
+    filter -- "filtered.events" --> NATS
+    filter -- "persist + embeddings" --> Qdrant
 
-  %% Subscriptions: infra → services
-  NATS -- "poll.source" --> connector
-  NATS -- "raw.events" --> filter
-  NATS -- "filtered.events" --> ranker
-  NATS -- "filtered.events" --> inspector
-  NATS -- "dead-letter →" --> DLQ
+    %% Subscriptions: infra → services
+    NATS -- "poll.source" --> connector
+    NATS -- "raw.events" --> filter
+    NATS -- "filtered.events" --> ranker
+    NATS -- "filtered.events" --> inspector
+    NATS -- "dead-letter →" --> DLQ
 
-  %% Additional infra flows
-  ranker -- "ranked.events" --> NATS
-  ranker -- "upsert score" --> Qdrant
-  inspector -- "flag anomalies" --> Qdrant
-  DLQ -- "notifies" --> guardian
+    %% Additional infra flows
+    ranker -- "ranked.events" --> NATS
+    ranker -- "upsert score" --> Qdrant
+    inspector -- "flag anomalies" --> Qdrant
+    DLQ -- "notifies" --> guardian
 
-  %% API & UI interactions
-  api -- "publish raw.events, new/removed.source" --> NATS
-  api -- "CRUD sources" --> Postgres
-  api -- "read/write events & scores" --> Qdrant
-  web -- "HTTP calls" --> api
+    %% API & UI interactions
+    api -- "publish raw.events, new/removed.source" --> NATS
+    api -- "CRUD sources" --> Postgres
+    api -- "read/write events & scores" --> Qdrant
+    web -- "HTTP calls" --> api
 
-  classDef service   fill:#e0f7fa,stroke:#006064,stroke-width:1px
-  classDef nats      fill:#ffecb3,stroke:#bf360c,stroke-width:1px
-  classDef dlq       fill:#ffe0b2,stroke:#f57c00,stroke-width:1px
-  classDef postgres  fill:#c8e6c9,stroke:#1b5e20,stroke-width:1px
-  classDef qdrant    fill:#d1c4e9,stroke:#4a148c,stroke-width:1px
-
-  %% Clickable nodes (note quotes around "_blank")
-  click scheduler   "docs/scheduler.md"   "_blank"
-  click connector   "docs/connector.md"    "_blank"
-  click filter      "docs/filter.md"       "_blank"
-  click ranker      "docs/ranker.md"       "_blank"
-  click inspector   "docs/inspector.md"    "_blank"
-  click api         "docs/api.md"          "_blank"
-  click web         "readme.md"            "_blank"
-  click guardian    "docs/guardian.md"     "_blank"
-
+    classDef service   fill:#e0f7fa,stroke:#006064,stroke-width:1px;
+    classDef nats      fill:#ffecb3,stroke:#bf360c,stroke-width:1px;
+    classDef dlq       fill:#ffe0b2,stroke:#f57c00,stroke-width:1px;
+    classDef postgres  fill:#c8e6c9,stroke:#1b5e20,stroke-width:1px;
+    classDef qdrant    fill:#d1c4e9,stroke:#4a148c,stroke-width:1px;
 ```
 
 ## Service Matrix
