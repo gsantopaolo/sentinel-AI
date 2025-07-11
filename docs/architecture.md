@@ -66,15 +66,16 @@ flowchart LR
   classDef postgres  fill:#c8e6c9,stroke:#1b5e20,stroke-width:1px
   classDef qdrant    fill:#d1c4e9,stroke:#4a148c,stroke-width:1px
 
-  %% Clickable nodes
-  click scheduler   "docs/scheduler.md"   _blank
-  click connector   "docs/connector.md"    _blank
-  click filter      "docs/filter.md"       _blank
-  click ranker      "docs/ranker.md"       _blank
-  click inspector   "docs/inspector.md"    _blank
-  click api         "docs/api.md"          _blank
-  click web         "readme.md"            _blank
-  click guardian    "docs/guardian.md"     _blank
+  %% Clickable nodes (note quotes around "_blank")
+  click scheduler   "docs/scheduler.md"   "_blank"
+  click connector   "docs/connector.md"    "_blank"
+  click filter      "docs/filter.md"       "_blank"
+  click ranker      "docs/ranker.md"       "_blank"
+  click inspector   "docs/inspector.md"    "_blank"
+  click api         "docs/api.md"          "_blank"
+  click web         "readme.md"            "_blank"
+  click guardian    "docs/guardian.md"     "_blank"
+
 ```
 
 ## Service Matrix
