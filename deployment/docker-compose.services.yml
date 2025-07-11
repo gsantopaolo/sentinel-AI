@@ -1,9 +1,8 @@
-
 networks:
-  frontend-network:
+  sentinel-frontend-network:
     external: true
     name: sentinel-frontend-network
-  backend-network:
+  sentinel-backend-network:
     external: true
     name: sentinel-backend-network
 
@@ -23,8 +22,19 @@ services:
       API_READINESS_TIME_OUT: ${API_READINESS_TIME_OUT}
     restart: unless-stopped
     networks:
-      - backend-network
-      - frontend-network # For Traefik exposure
+      - sentinel-backend-network
+      - sentinel-frontend-network # For Traefik exposure
+#    depends_on:
+#      postgres:
+#        condition: service_started
+#      nats:
+#        condition: service_started
+    healthcheck:
+      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
+      interval: 60s
+      start_period: 10s
+      timeout: 3s
+      retries: 3
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.api.rule=PathPrefix(`/api`)"
@@ -44,7 +54,13 @@ services:
       CONNECTOR_READINESS_TIME_OUT: ${CONNECTOR_READINESS_TIME_OUT}
     restart: unless-stopped
     networks:
-      - backend-network
+      - sentinel-backend-network
+    healthcheck:
+      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
+      interval: 60s
+      start_period: 10s
+      timeout: 3s
+      retries: 3
 
   filter:
     build:
@@ -66,7 +82,13 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     restart: unless-stopped
     networks:
-      - backend-network
+      - sentinel-backend-network
+    healthcheck:
+      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
+      interval: 60s
+      start_period: 10s
+      timeout: 3s
+      retries: 3
 
   ranker:
     build:
@@ -86,7 +108,13 @@ services:
       READINESS_TIME_OUT: ${RANKER_READINESS_TIME_OUT}
     restart: unless-stopped
     networks:
-      - backend-network
+      - sentinel-backend-network
+    healthcheck:
+      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
+      interval: 60s
+      start_period: 10s
+      timeout: 3s
+      retries: 3
 
   inspector:
     build:
@@ -108,7 +136,13 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     restart: unless-stopped
     networks:
-      - backend-network
+      - sentinel-backend-network
+    healthcheck:
+      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
+      interval: 60s
+      start_period: 10s
+      timeout: 3s
+      retries: 3
 
   scheduler:
     build:
@@ -122,7 +156,13 @@ services:
       SCHEDULER_READINESS_TIME_OUT: ${SCHEDULER_READINESS_TIME_OUT}
     restart: unless-stopped
     networks:
-      - backend-network
+      - sentinel-backend-network
+    healthcheck:
+      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
+      interval: 60s
+      start_period: 10s
+      timeout: 3s
+      retries: 3
 
   guardian:
     build:
@@ -135,7 +175,13 @@ services:
       GUARDIAN_READINESS_TIME_OUT: ${GUARDIAN_READINESS_TIME_OUT}
     restart: unless-stopped
     networks:
-      - backend-network
+      - sentinel-backend-network
+    healthcheck:
+      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
+      interval: 60s
+      start_period: 10s
+      timeout: 3s
+      retries: 3
 
   web:
     build:
@@ -147,8 +193,8 @@ services:
       LOG_FORMAT: ${LOG_FORMAT}
     restart: unless-stopped
     networks:
-      - frontend-network # For Traefik exposure
-      - backend-network # To communicate with API
+      - sentinel-frontend-network # For Traefik exposure
+      - sentinel-backend-network # To communicate with API
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.web.rule=PathPrefix(`/web`)"

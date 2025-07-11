@@ -209,7 +209,7 @@ __marimo__/
 # ignore data path
 data/
 excluded/
-
+deployment/data
 .idea/
 
 server.txt

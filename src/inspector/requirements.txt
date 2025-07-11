@@ -1,5 +1,5 @@
+anthropic
+dotenv
 nats-py
-qdrant-client
-pyyaml
-python-dotenv
-asyncio
+openai
+yaml

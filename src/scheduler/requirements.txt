@@ -1,4 +1,4 @@
-nats-py
-python-dotenv
-APScheduler
-protobuf
+nats-py==2.10.0
+python-dotenv==1.1.1
+APScheduler==3.11.0
+protobuf==6.31.1

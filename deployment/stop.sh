@@ -27,18 +27,18 @@ echo "\nStopping and removing Sentinel AI Docker Compose stacks..."
 # Stop and remove Docker Compose stacks
 
 
-# Sentinel AI microservices (including web)
+
+# Combined Base services (NATS, Qdrant, Postgres) and Sentinel AI microservices (including web)
 docker compose \
   -p sentinel-services \
   --env-file deployment/.env \
   -f deployment/docker-compose.services.yml \
   down ${REMOVE_VOLUMES}
 
-# Base services (NATS, Qdrant, Postgres)
 docker compose \
-  -p sentinel-db \
+  -p sentinel-services \
   --env-file deployment/.env \
-  -f deployment/docker-compose.db.yml \
+  -f deployment/docker-compose.base.yml \
   down ${REMOVE_VOLUMES}
 
 # Traefik & portainer

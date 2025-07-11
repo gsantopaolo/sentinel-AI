@@ -57,38 +57,32 @@ check_and_create_network() {
   fi
 }
 
-check_and_create_network "frontend-network"
-check_and_create_network "backend-network"
+check_and_create_network "sentinel-frontend-network"
+check_and_create_network "sentinel-backend-network"
 
 # Bring up Docker Compose stacks
 
-# Traefik & portainer
+# Portainer
 docker compose \
   -p sentinel-infra \
   --env-file deployment/.env \
   -f deployment/docker-compose.infra.yml \
   up -d "$@"
 
-# Base services (NATS, Qdrant, Postgres)
-docker compose \
-  -p sentinel-db \
-  --env-file deployment/.env \
-  -f deployment/docker-compose.db.yml \
-  up -d "$@"
-
-# Sentinel AI microservices (including web)
+# Combined Base services (NATS, Qdrant, Postgres) and Sentinel AI microservices (including web)
 docker compose \
   -p sentinel-services \
   --env-file deployment/.env \
+  -f deployment/docker-compose.base.yml \
   -f deployment/docker-compose.services.yml \
   up -d "$@"
 
 
 
 
-
-echo "\nSentinel AI deployment initiated. Check Docker logs for status."
-echo "Traefik Dashboard: http://localhost:${TRAEFIK_DASHBOARD_PORT}"
+echo "
+Sentinel AI deployment initiated. Check Docker logs for status."
+#echo "Traefik Dashboard: http://localhost:${TRAEFIK_DASHBOARD_PORT}"
 echo "Portainer: http://localhost:${PORTAINER_PORT}"
 echo "API: http://localhost:${TRAEFIK_HTTP_PORT}/api"
 echo "Web UI: http://localhost:${TRAEFIK_HTTP_PORT}/web"

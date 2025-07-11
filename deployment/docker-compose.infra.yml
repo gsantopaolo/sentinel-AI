@@ -1,8 +1,8 @@
 networks:
-  frontend-network:
+  sentinel-frontend-network:
     external: true
     name: sentinel-frontend-network
-  backend-network:
+  sentinel-backend-network:
     external: true
     name: sentinel-backend-network
 
@@ -18,7 +18,7 @@ services:
       - "${PORTAINER_PORT}:9000"
     restart: unless-stopped
     networks:
-      - frontend-network
+      - sentinel-backend-network
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.portainer.rule=PathPrefix(`/portainer`)"
@@ -49,8 +49,8 @@ services:
       - --log.level=INFO
     restart: unless-stopped
     networks:
-      - frontend-network
-      - backend-network # To route to backend services
+      - sentinel-frontend-network
+      - sentinel-backend-network # To route to backend services
 
 volumes:
   traefik-certs:

@@ -171,9 +171,8 @@ async def main():
     for detector in ANOMALY_DETECTORS:
         if detector.get('type') == 'llm_anomaly_detector':
             params = detector.get('parameters', {})
-            provider = params.get('provider')
-            model_name = params.get('model_name')
-            api_key_env_var = params.get('api_key_env_var')
+            provider = os.getenv("LLM_PROVIDER")
+            model_name = os.getenv("LLM_MODEL_NAME")
             
             # Determine which API key to use based on provider
             api_key = None
@@ -183,7 +182,7 @@ async def main():
                 api_key = os.getenv("ANTHROPIC_API_KEY")
             
             if not api_key:
-                logger.error(f"❌ LLM API key not set for {provider}. Please set {api_key_env_var} in .env")
+                logger.error(f"❌ LLM API key not set for {provider}. Please set the appropriate API key in .env")
                 return # Exit if API key is missing
             llm_client = LLMClient(provider, model_name, api_key)
             logger.info(f"✅ LLM Client initialized for anomaly detection with provider: {provider} and model: {model_name}")

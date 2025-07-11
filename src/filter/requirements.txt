@@ -1,8 +1,8 @@
-nats-py
-python-dotenv
-protobuf
-qdrant-client
-sentence-transformers
-pyyaml
-openai
-anthropic
+python-dotenv==1.1.1
+protobuf==6.31.1
+nats-py==2.10.0
+qdrant-client==1.14.3
+sentence-transformers==5.0.0
+pyyaml==6.0.2
+openai==1.93.3
+anthropic==0.57.1

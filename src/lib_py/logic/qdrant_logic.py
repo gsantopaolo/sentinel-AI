@@ -90,11 +90,11 @@ class QdrantLogic:
             raise
 
     def upsert_event(self, event_data: Dict[str, Any]):
-        logger.info(f"🗄️ Upserting event with ID: '{event_data.get("id", "N/A")}' to collection '{self.collection_name}'.")
+        logger.info(f"️ Upserting event with ID: '{event_data.get('id', 'N/A')}' to collection '{self.collection_name}'.")
         try:
             # Ensure 'text' key exists for embedding
             if "content" not in event_data:
-                logger.warning(f"⚠️ Event {event_data.get("id", "N/A")} missing 'content' field, skipping embedding.")
+                logger.warning(f"⚠️ Event {event_data.get('id', 'N/A')} missing 'content' field, skipping embedding.")
                 raise ValueError("Event data must contain a 'content' field for embedding.")
 
             embedding = self.model.encode(event_data["content"]).tolist()
@@ -108,9 +108,9 @@ class QdrantLogic:
                 wait=True,
                 points=[point]
             )
-            logger.info(f"✅ Event '{event_data["id"]}' upserted successfully.")
+            logger.info(f"✅ Event '{event_data['id']}' upserted successfully.")
         except Exception as e:
-            logger.error(f"❌ Error upserting event '{event_data.get("id", "N/A")}' to Qdrant: {e}")
+            logger.error(f"❌ Error upserting event '{event_data.get('id', 'N/A')}' to Qdrant: {e}")
             raise
 
     def delete_events(self, ids: List[str]):

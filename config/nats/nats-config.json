@@ -1,0 +1,7 @@
+{
+  "server": {
+    "name": "nats",
+    "url": "http://localhost:8000/proxy/"
+  },
+  "hideServerInput": true
+}

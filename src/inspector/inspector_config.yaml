@@ -19,9 +19,6 @@ anomaly_detectors:
 
   - type: llm_anomaly_detector
     parameters:
-      provider: "openai"
-      model_name: "gpt-4o-mini"
-      api_key_env_var: "OPENAI_API_KEY"
       prompt: |
         Analyze the following news article for potential anomalies, signs of fake news, or highly unusual content. 
         Consider the tone, factual consistency (if verifiable from content), and overall coherence. 
