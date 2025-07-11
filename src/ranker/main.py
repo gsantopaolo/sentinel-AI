@@ -41,7 +41,7 @@ NATS_URL = os.getenv("NATS_URL", "nats://localhost:4222")
 NATS_RECONNECT_TIME_WAIT = int(os.getenv("NATS_RECONNECT_TIME_WAIT", 10))
 NATS_CONNECT_TIMEOUT = int(os.getenv("NATS_CONNECT_TIMEOUT", 10))
 NATS_MAX_RECONNECT_ATTEMPTS = int(os.getenv("NATS_MAX_RECONNECT_ATTEMPTS", 60))
-READINESS_TIME_OUT = int(os.getenv('READINESS_TIME_OUT', 500))
+READINESS_TIME_OUT = int(os.getenv('RANKER_READINESS_TIME_OUT', 500))
 
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
@@ -138,7 +138,6 @@ async def main():
     logger.info("🛠️ Ranker service starting...")
 
     # Start the readiness probe server in a separate thread
-    global readiness_probe
     readiness_probe = ReadinessProbe(readiness_time_out=READINESS_TIME_OUT)
     readiness_probe_thread = threading.Thread(target=readiness_probe.start_server, daemon=True)
     readiness_probe_thread.start()

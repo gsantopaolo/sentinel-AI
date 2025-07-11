@@ -15,15 +15,21 @@ services:
     env_file:
       - ../config/api.env
     environment:
-      NATS_URL: ${NATS_URL}
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       LOG_LEVEL: ${LOG_LEVEL}
       LOG_FORMAT: ${LOG_FORMAT}
+      NATS_URL: ${NATS_URL}
+      NATS_RECONNECT_TIME_WAIT: ${NATS_RECONNECT_TIME_WAIT}
+      NATS_CONNECT_TIMEOUT: ${NATS_CONNECT_TIMEOUT}
+      NATS_MAX_RECONNECT_ATTEMPTS: ${NATS_MAX_RECONNECT_ATTEMPTS}
+      SCHEDULER_NATS_URL: ${SCHEDULER_NATS_URL}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       API_READINESS_TIME_OUT: ${API_READINESS_TIME_OUT}
     restart: unless-stopped
+    ports:
+      - "8000:8000"
     networks:
       - sentinel-backend-network
-      - sentinel-frontend-network # For Traefik exposure
+#      - sentinel-frontend-network # For Traefik exposure
 #    depends_on:
 #      postgres:
 #        condition: service_started
@@ -35,12 +41,21 @@ services:
       start_period: 10s
       timeout: 3s
       retries: 3
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=PathPrefix(`/api`)"
-      - "traefik.http.middlewares.api-stripprefix.stripprefix.prefixes=/api"
-      - "traefik.http.routers.api.middlewares=api-stripprefix"
-      - "traefik.http.services.api.loadbalancer.server.port=8000"
+#    labels:
+#      - "traefik.enable=true"
+#      # 1) Match requests to localhost + /api
+#      - "traefik.http.routers.api.rule=Host(`localhost`) && PathPrefix(`/api`)"
+#      # 2) Listen on both HTTP & HTTPS
+#      - "traefik.http.routers.api.entrypoints=web"
+##      - "traefik.http.routers.api.entrypoints=websecure"
+#      # 3) Terminate TLS and use ACME resolver
+##      - "traefik.http.routers.api.tls=true"
+##      - "traefik.http.routers.api.tls.certresolver=myresolver"
+#      # 4) Strip /api before forwarding
+#      - "traefik.http.routers.api.middlewares=api-stripprefix"
+#      - "traefik.http.middlewares.api-stripprefix.stripprefix.prefixes=/api"
+#      # 5) Forward to port 8000 in the container
+#      - "traefik.http.services.api.loadbalancer.server.port=8000"
 
   connector:
     build:
@@ -48,9 +63,12 @@ services:
       dockerfile: src/connector/Dockerfile
     container_name: sentinel-connector
     environment:
-      NATS_URL: ${NATS_URL}
       LOG_LEVEL: ${LOG_LEVEL}
       LOG_FORMAT: ${LOG_FORMAT}
+      NATS_URL: ${NATS_URL}
+      NATS_RECONNECT_TIME_WAIT: ${NATS_RECONNECT_TIME_WAIT}
+      NATS_CONNECT_TIMEOUT: ${NATS_CONNECT_TIMEOUT}
+      NATS_MAX_RECONNECT_ATTEMPTS: ${NATS_MAX_RECONNECT_ATTEMPTS}
       CONNECTOR_READINESS_TIME_OUT: ${CONNECTOR_READINESS_TIME_OUT}
     restart: unless-stopped
     networks:
@@ -70,14 +88,19 @@ services:
     volumes:
       - ../src/filter/filter_config.yaml:/app/filter_config.yaml
     environment:
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
       NATS_URL: ${NATS_URL}
+      NATS_RECONNECT_TIME_WAIT: ${NATS_RECONNECT_TIME_WAIT}
+      NATS_CONNECT_TIMEOUT: ${NATS_CONNECT_TIMEOUT}
+      NATS_MAX_RECONNECT_ATTEMPTS: ${NATS_MAX_RECONNECT_ATTEMPTS}
       QDRANT_HOST: ${QDRANT_HOST}
       QDRANT_PORT: ${QDRANT_PORT}
       QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME}
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME}
-      LOG_LEVEL: ${LOG_LEVEL}
-      LOG_FORMAT: ${LOG_FORMAT}
-      READINESS_TIME_OUT: ${FILTER_READINESS_TIME_OUT}
+      FILTER_READINESS_TIME_OUT: ${FILTER_READINESS_TIME_OUT}
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      LLM_MODEL_NAME: ${LLM_MODEL_NAME}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     restart: unless-stopped
@@ -98,14 +121,17 @@ services:
     volumes:
       - ../src/ranker/ranker_config.yaml:/app/src/ranker/ranker_config.yaml
     environment:
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
       NATS_URL: ${NATS_URL}
+      NATS_RECONNECT_TIME_WAIT: ${NATS_RECONNECT_TIME_WAIT}
+      NATS_CONNECT_TIMEOUT: ${NATS_CONNECT_TIMEOUT}
+      NATS_MAX_RECONNECT_ATTEMPTS: ${NATS_MAX_RECONNECT_ATTEMPTS}
       QDRANT_HOST: ${QDRANT_HOST}
       QDRANT_PORT: ${QDRANT_PORT}
       QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME}
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME}
-      LOG_LEVEL: ${LOG_LEVEL}
-      LOG_FORMAT: ${LOG_FORMAT}
-      READINESS_TIME_OUT: ${RANKER_READINESS_TIME_OUT}
+      RANKER_READINESS_TIME_OUT: ${RANKER_READINESS_TIME_OUT}
     restart: unless-stopped
     networks:
       - sentinel-backend-network
@@ -125,24 +151,30 @@ services:
       - ../src/inspector/inspector_config.yaml:/app/src/inspector/inspector_config.yaml
     environment:
       NATS_URL: ${NATS_URL}
+      NATS_RECONNECT_TIME_WAIT: ${NATS_RECONNECT_TIME_WAIT}
+      NATS_CONNECT_TIMEOUT: ${NATS_CONNECT_TIMEOUT}
+      NATS_MAX_RECONNECT_ATTEMPTS: ${NATS_MAX_RECONNECT_ATTEMPTS}
       QDRANT_HOST: ${QDRANT_HOST}
       QDRANT_PORT: ${QDRANT_PORT}
       QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME}
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME}
       LOG_LEVEL: ${LOG_LEVEL}
       LOG_FORMAT: ${LOG_FORMAT}
-      READINESS_TIME_OUT: ${INSPECTOR_READINESS_TIME_OUT}
+      INSPECTOR_READINESS_TIME_OUT: ${INSPECTOR_READINESS_TIME_OUT}
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      LLM_MODEL_NAME: ${LLM_MODEL_NAME}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     restart: unless-stopped
     networks:
       - sentinel-backend-network
-    healthcheck:
-      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
-      interval: 60s
-      start_period: 10s
-      timeout: 3s
-      retries: 3
+#    healthcheck:
+#      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
+#      interval: 60s
+#      start_period: 10s
+#      timeout: 3s
+#      retries: 3
+
 
   scheduler:
     build:
@@ -151,6 +183,9 @@ services:
     container_name: sentinel-scheduler
     environment:
       NATS_URL: ${NATS_URL}
+      NATS_RECONNECT_TIME_WAIT: ${NATS_RECONNECT_TIME_WAIT}
+      NATS_CONNECT_TIMEOUT: ${NATS_CONNECT_TIMEOUT}
+      NATS_MAX_RECONNECT_ATTEMPTS: ${NATS_MAX_RECONNECT_ATTEMPTS}
       LOG_LEVEL: ${LOG_LEVEL}
       LOG_FORMAT: ${LOG_FORMAT}
       SCHEDULER_READINESS_TIME_OUT: ${SCHEDULER_READINESS_TIME_OUT}
@@ -191,13 +226,30 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL}
       LOG_FORMAT: ${LOG_FORMAT}
+      WEB_READINESS_TIME_OUT: ${WEB_READINESS_TIME_OUT}
+      STREAMLIT_SERVER_ADDRESS: "0.0.0.0"
+      STREAMLIT_SERVER_PORT: "8501"
+      API_BASE_URL: ${API_BASE_URL}
     restart: unless-stopped
+    ports:
+      - "8501:8501"
     networks:
       - sentinel-frontend-network # For Traefik exposure
-      - sentinel-backend-network # To communicate with API
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.web.rule=PathPrefix(`/web`)"
-      - "traefik.http.middlewares.web-stripprefix.stripprefix.prefixes=/web"
-      - "traefik.http.routers.web.middlewares=web-stripprefix"
-      - "traefik.http.services.web.loadbalancer.server.port=8501" # Default Streamlit port
+      - sentinel-backend-network # To communicate with API\
+    command: >
+      bash -c "streamlit run src/web/app.py \
+        --server.address $STREAMLIT_SERVER_ADDRESS \
+        --server.port    $STREAMLIT_SERVER_PORT"
+#    labels:
+#      - "traefik.enable=true"
+#      - "traefik.http.routers.web.rule=Host(`localhost`) && PathPrefix(`/web`)"
+#      - "traefik.http.routers.web.entrypoints=web"
+#      - "traefik.http.routers.web.middlewares=web-stripprefix"
+#      - "traefik.http.middlewares.web-stripprefix.stripprefix.prefixes=/web"
+#      - "traefik.http.services.web.loadbalancer.server.port=8501"
+#    healthcheck:
+#      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
+#      interval: 60s
+#      start_period: 10s
+#      timeout: 3s
+#      retries: 3

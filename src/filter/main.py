@@ -34,23 +34,21 @@ logger = logging.getLogger(__name__)
 with open('filter_config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 
-LLM_CONFIG = config['llm_config']
+
 FILTERING_RULES = config['filtering_rules']
 
 NATS_URL = os.getenv("NATS_URL", "nats://localhost:4222")
 NATS_RECONNECT_TIME_WAIT = int(os.getenv("NATS_RECONNECT_TIME_WAIT", 10))
 NATS_CONNECT_TIMEOUT = int(os.getenv("NATS_CONNECT_TIMEOUT", 10))
 NATS_MAX_RECONNECT_ATTEMPTS = int(os.getenv("NATS_MAX_RECONNECT_ATTEMPTS", 60))
-READINESS_TIME_OUT = int(os.getenv('READINESS_TIME_OUT', 500))
+READINESS_TIME_OUT = int(os.getenv('FILTER_READINESS_TIME_OUT', 500))
 
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
 QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "news_events")
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 
-# LLM API Keys
-OPENAI_API_KEY = os.getenv(LLM_CONFIG['api_key_env_var'])
-ANTHROPIC_API_KEY = os.getenv(LLM_CONFIG['api_key_env_var'])
+
 
 # NATS Stream configuration
 RAW_EVENTS_STREAM_NAME = "raw-events-stream"
@@ -160,7 +158,6 @@ async def main():
     logger.info("🛠️ Filter service starting...")
 
     # Start the readiness probe server in a separate thread
-    global readiness_probe
     readiness_probe = ReadinessProbe(readiness_time_out=READINESS_TIME_OUT)
     readiness_probe_thread = threading.Thread(target=readiness_probe.start_server, daemon=True)
     readiness_probe_thread.start()
@@ -168,12 +165,19 @@ async def main():
 
     # Initialize LLM Client
     global llm_client
-    api_key = OPENAI_API_KEY if LLM_CONFIG['provider'] == "openai" else ANTHROPIC_API_KEY
+    provider = os.getenv("LLM_PROVIDER")
+    model_name = os.getenv("LLM_MODEL_NAME")
+    api_key = None
+    if provider == "openai":
+        api_key = os.getenv("OPENAI_API_KEY")
+    elif provider == "anthropic":
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+
     if not api_key:
-        logger.error(f"❌ LLM API key not set for {LLM_CONFIG['provider']}. Please set {LLM_CONFIG['api_key_env_var']} in .env")
+        logger.error(f"❌ LLM API key not set for {provider}. Please set the appropriate API key in .env")
         return # Exit if API key is missing
-    llm_client = LLMClient(LLM_CONFIG['provider'], LLM_CONFIG['model_name'], api_key)
-    logger.info(f"✅ LLM Client initialized with provider: {LLM_CONFIG['provider']} and model: {LLM_CONFIG['model_name']}")
+    llm_client = LLMClient(provider, model_name, api_key)
+    logger.info(f"✅ LLM Client initialized with provider: {provider} and model: {model_name}")
 
     # Initialize Qdrant Logic
     global qdrant_logic

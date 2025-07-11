@@ -1,10 +1,44 @@
+from dotenv import load_dotenv
+import os
+import logging
 import streamlit as st
 import requests
 import pandas as pd
 import json
+from src.lib_py.middlewares.readiness_probe import ReadinessProbe
+import threading
+from dotenv import load_dotenv
+
+
+
+load_dotenv()
+
+# Get log level from env
+log_level_str = os.getenv('LOG_LEVEL', 'INFO').upper()
+log_level = getattr(logging, log_level_str, logging.INFO)
+
+# Get log format from env
+log_format = os.getenv('LOG_FORMAT', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Configure logging
+logging.basicConfig(level=log_level, format=log_format)
+logger = logging.getLogger(__name__)
+
+READINESS_TIME_OUT = int(os.getenv('WEB_READINESS_TIME_OUT', 500))
 
 # --- API Configuration ---
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.getenv('API_BASE_URL', 'http://api:8000')
+
+if "startup_done" not in st.session_state:
+    logger.info("🛠️ Sentinel-AI Web UI starting...")
+
+    # Start the readiness probe server in a separate thread
+    readiness_probe = ReadinessProbe(readiness_time_out=READINESS_TIME_OUT)
+    readiness_probe_thread = threading.Thread(target=readiness_probe.start_server, daemon=True)
+    readiness_probe_thread.start()
+    logger.info("✅ Readiness probe server started.")
+
+    st.session_state.startup_done = True
 
 # --- Helper Functions ---
 def make_request(method, endpoint, data=None):
@@ -177,3 +211,4 @@ This project is licensed under the **MIT License**.
 
 If you like this project, please consider starring it on GitHub!
 """)
+

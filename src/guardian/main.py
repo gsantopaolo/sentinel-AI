@@ -26,7 +26,6 @@ async def main():
     logger.info("🛠️ Guardian service starting...")
 
     # Start the readiness probe server in a separate thread
-    global readiness_probe
     readiness_probe = ReadinessProbe(readiness_time_out=READINESS_TIME_OUT)
     readiness_probe_thread = threading.Thread(target=readiness_probe.start_server, daemon=True)
     readiness_probe_thread.start()

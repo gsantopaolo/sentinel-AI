@@ -1,5 +1,11 @@
-anthropic
-dotenv
-nats-py
-openai
-yaml
+anthropic==0.57.1
+nats-py==2.10.0
+python-dotenv==1.1.1
+openai==1.93.3
+pyyaml==6.0.2
+protobuf==6.31.1
+qdrant-client==1.14.3
+sentence-transformers==5.0.0
+
+
+

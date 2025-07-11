@@ -81,8 +81,13 @@ docker compose \
 
 
 echo "
-Sentinel AI deployment initiated. Check Docker logs for status."
+Sentinel AI deployment initiated. Check Docker logs via Portainer for status."
 #echo "Traefik Dashboard: http://localhost:${TRAEFIK_DASHBOARD_PORT}"
+#echo "Web UI: http://localhost:${TRAEFIK_HTTP_PORT}/web"
+echo "Sentinel-AI Web UI: http://localhost:8501"
 echo "Portainer: http://localhost:${PORTAINER_PORT}"
-echo "API: http://localhost:${TRAEFIK_HTTP_PORT}/api"
-echo "Web UI: http://localhost:${TRAEFIK_HTTP_PORT}/web"
+#echo "API: http://localhost:${TRAEFIK_HTTP_PORT}/api"
+echo "NATS Dashboard: http://localhost:8502"
+echo "Qdrant Dashboard: http://localhost:6333/dashboard"
+echo "Postgres Dashboard: http://localhost:16543"
+

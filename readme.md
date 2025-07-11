@@ -45,6 +45,8 @@ An **event-driven**, **microservice** platform for real-time feed ingestion, fil
 > *To be completed: bonus features, advanced filtering modules, extended monitoring strategies.*
 - Scheduler: for full scalability change APScheduler
 - Improved web UI
+- Readiness probe for inspector and web are not working
+- portainer and authentik needs to be enabled
 - Implement Authentik to add user access with existing organization's credentials 
 - Creat the HELM chart to deploy the cluster on K8s
 ---

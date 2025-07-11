@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 # Copy the rest of the application code
 COPY src/web/app.py /app/src/web/app.py
+COPY src/lib_py /app/src/lib_py
 
 # Set the PYTHONPATH environment variable
 ENV PYTHONPATH="/app"
