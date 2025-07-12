@@ -102,17 +102,19 @@ async def raw_event_handler(msg: Msg):
         relevance_response = await llm_client.get_completion(relevance_prompt)
         logger.info(f"LLM Relevance for '{raw_event.id}': {relevance_response}")
 
-        is_relevant = False
-        if "RELEVANT" in relevance_response.upper():
-            is_relevant = True
-        elif "POTENTIALLY_RELEVANT" in relevance_response.upper():
-            # Further logic for potentially relevant, for now treat as relevant
-            is_relevant = True
+        is_relevant = "RELEVANT" in relevance_response.upper() or "POTENTIALLY_RELEVANT" in relevance_response.upper()
         
+        # If not relevant, log a detailed warning and discard.
         if not is_relevant:
-            logger.info(f"🗑️ Event '{raw_event.id}' deemed irrelevant. Skipping.")
+            logger.warning(
+                f"🗑️ Event '{raw_event.id}' deemed irrelevant and will be discarded. "
+                f"Title: '{raw_event.title}'. Reason: '{relevance_response.strip()}'"
+            )
             await msg.ack()
             return
+
+        # --- Event is RELEVANT, proceed with processing ---
+        logger.info(f"✅ Event '{raw_event.id}' is RELEVANT. Proceeding with categorization and persistence.")
 
         # 2. Categorize using LLM
         category_prompt = FILTERING_RULES['category_prompt'].format(article_content=raw_event.content)
@@ -120,30 +122,34 @@ async def raw_event_handler(msg: Msg):
         logger.info(f"LLM Categories for '{raw_event.id}': {category_response}")
         categories = [c.strip() for c in category_response.split(',') if c.strip()]
 
-        # 3. Generate embeddings and persist to Qdrant
+        # 3. Construct payload and persist to Qdrant
+        # This is the first time the event is being saved to Qdrant.
         event_payload_data = {
             "id": raw_event.id,
             "title": raw_event.title,
             "content": raw_event.content,
             "timestamp": raw_event.timestamp,
             "source": raw_event.source,
-            "categories": categories, # Add LLM-derived categories
-            "is_relevant": is_relevant # Add LLM-derived relevance
+            "categories": categories,
+            "is_relevant": True
         }
-        # Convert timestamp string to datetime object for Pydantic model validation if needed
-        # For Qdrant, it's stored as part of payload, so string is fine.
         
-        await qdrant_logic.upsert_event(event_payload_data)
-        logger.info(f"🗄️ Event '{raw_event.id}' persisted to Qdrant.")
+        success = await qdrant_logic.upsert_event(event_payload_data)
+        if not success:
+            logger.error(f"❌ Failed to persist event '{raw_event.id}' to Qdrant. It will not be published downstream.")
+            await msg.nak() # NACK to signal failure
+            return
 
-        # 4. Publish filtered event
+        logger.info(f"🗄️ Event '{raw_event.id}' persisted to Qdrant successfully.")
+
+        # 4. Publish filtered event for downstream services
         filtered_event = filtered_event_pb2.FilteredEvent(
             id=raw_event.id,
             title=raw_event.title,
             timestamp=raw_event.timestamp,
             source=raw_event.source,
             categories=categories, # Pass categories in filtered event
-            is_relevant=is_relevant
+            is_relevant=True
         )
         await filtered_events_publisher.publish(filtered_event)
         logger.info(f"✉️ Published filtered event '{raw_event.id}' to filtered.events.")

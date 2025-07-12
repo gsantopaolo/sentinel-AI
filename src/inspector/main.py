@@ -181,6 +181,7 @@ async def filtered_event_handler(msg: Msg):
 async def main():
     logger.info("🛠️ Inspector service starting...")
 
+    global readiness_probe
     readiness_probe = ReadinessProbe(readiness_time_out=READINESS_TIME_OUT)
     readiness_probe_thread = threading.Thread(target=readiness_probe.start_server, daemon=True)
     readiness_probe_thread.start()

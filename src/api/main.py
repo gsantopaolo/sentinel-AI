@@ -177,52 +177,32 @@ async def ingest_data(events: List[Event]):
     logger.info(f"📱 Received ingest batch of {len(events)} events")
     for ev in events:
         try:
-            # Prepare data for Qdrant - include all original fields
-            event_data = {
-                "id": ev.id,
-                "title": ev.title,
-                "content": ev.body or "",  # This is used for vector embedding
-                "source": ev.source,
-                "published_at": ev.published_at.isoformat(),
-                # Include any additional metadata from the original event
-                "original_data": ev.dict()  # Store complete original data
-            }
-            
-            # Store in Qdrant with vector embedding
-            try:
-                # The upsert_event function is now async, so we can await it directly
-                if not await qdrant_logic.upsert_event(event_data):
-                    logger.error(f"Failed to persist event '{ev.id}' to Qdrant.")
-                    # Decide if you want to raise an exception or return an error response
-                else:
-                    logger.info(f"🗄️ Event '{ev.id}' persisted to Qdrant with vector embedding.")
-            except Exception as e:
-                logger.error(f"❌ Error persisting event {ev.id}: {e}")
-                # Continue with next event even if one fails
+            # Basic validation
+            if not all(k in ev for k in ['id', 'source', 'title', 'published_at']):
+                logger.warning(f"Skipping event due to missing required fields: {ev.get('id', 'N/A')}")
                 continue
-                
-            # Publish to NATS for further processing
+
+            logger.info(f"Processing event: {ev['id']}")
+
+            # Publish to NATS for further processing by the 'filter' service
             raw = raw_event_pb2.RawEvent(
-                id=ev.id,
-                title=ev.title,
-                content=ev.body or "",
-                timestamp=ev.published_at.isoformat(),
-                source=ev.source,
+                id=ev['id'],
+                source=ev['source'],
+                title=ev['title'],
+                content=ev.get('content', ev.get('body', '')), # Handle both 'content' and 'body'
+                timestamp=ev['published_at']
             )
             
-            try:
-                await raw_events_publisher.publish(raw)
-                logger.info(f"✉️ Published raw event: {ev.id}")
-            except Exception as e:
-                logger.error(f"❌ Publishing raw event {ev.id} failed: {e}")
-                # Continue with next event even if publishing fails
-                continue
-                
+            # The publisher is now responsible for sending the message
+            await raw_events_publisher.publish(raw)
+            logger.info(f"✉️ Published raw event: {ev['id']}")
+
         except Exception as e:
-            logger.error(f"❌ Error processing event {ev.id}: {e}")
+            logger.error(f"❌ Error processing event {ev.get('id', 'N/A')}: {e}")
             # Continue with next event even if one fails
             continue
-    return {"message": "ACK"}
+
+    return {"message": f"Successfully processed and published {len(events)} events."}
 
 # ————— Helper for Model Conversion —————
 def source_to_read_model(source: SourceModel) -> dict:

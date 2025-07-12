@@ -5,10 +5,10 @@
 The `api` service serves as the unified gateway for external interactions with the Sentinel AI platform. It exposes a RESTful interface for various operations, including data ingestion, news retrieval, and source management. It acts as the primary entry point for users and other applications to interact with the system.
 
 Its core responsibilities include:
-1.  **Ingestion**: Accepting raw data and queuing it for processing.
-2.  **Retrieval & Listing**: Providing endpoints to retrieve and list news events (all, filtered, or ranked).
+1.  **Ingestion**: Accepting raw event data, performing basic validation, and publishing it to a NATS stream for asynchronous processing.
+2.  **Retrieval & Listing**: Providing endpoints to retrieve and list news events that have been processed by downstream services.
 3.  **Source Management**: Allowing CRUD (Create, Read, Update, Delete) operations for data sources.
-4.  **Event Publication**: Publishing specific events to NATS JetStream to trigger downstream microservices.
+4.  **Event Publication**: Publishing source management events (e.g., `new.source`) to NATS JetStream to notify other microservices.
 
 ## Core Functionality
 
@@ -16,11 +16,16 @@ The `api` service handles various types of requests, orchestrating interactions 
 
 ### 1. Data Ingestion (`POST /ingest`)
 
-This endpoint accepts raw event data. Instead of processing it directly, the `api` service publishes these events to the `raw.events` NATS stream. This asynchronous approach ensures high throughput and decouples the ingestion process from immediate processing.
+This endpoint is the primary entry point for all event data. It is designed to be a lightweight, highly available gateway. Its responsibilities are strictly limited to:
+- Accepting a JSON array of event data.
+- Performing basic structural validation on each event.
+- Publishing valid events as `RawEvent` protobuf messages to the `raw.events` NATS stream.
+
+It does **not** perform any data enrichment, embedding generation, or database writes. This ensures high throughput and decouples the ingestion process from the more intensive processing logic handled by the `filter` service.
 
 ### 2. News Retrieval and Listing (`GET /news`, `/news/filtered`, `/news/ranked`, `/retrieve`)
 
-These endpoints are designed to fetch news events. While currently returning mock data, their future implementation will involve querying Qdrant (the vector database) to retrieve events based on various criteria, including filtering and ranking scores determined by other services.
+These endpoints are designed to fetch news events that have already been processed, filtered, and stored by downstream services. They query Qdrant to retrieve events based on various criteria, including filtering and ranking scores determined by other services.
 
 ### 3. Source Management (`GET/POST/PUT/DELETE /sources`)
 
@@ -42,55 +47,31 @@ The following sequence diagram illustrates key interactions of the `api` service
 sequenceDiagram
     participant Client as External Client/Web UI
     participant API as API Service
-    participant Postgres as PostgreSQL DB
     participant NATS as NATS JetStream
+    participant Filter as Filter Service
+    participant Qdrant as Qdrant DB
 
-    Client->>API: HTTP Request (e.g., POST /ingest)
-    API->>API: Validate Request
-    alt POST /ingest
-        API->>NATS: Publish raw.events (RawEvent Protobuf)
-        NATS-->>API: Acknowledge publish
-        API-->>Client: HTTP 202 Accepted
-    end
-    alt POST /sources (Create Source)
-        API->>Postgres: Insert new source record
-        Postgres-->>API: Return new source ID
-        API->>NATS: Publish new.source (NewSource Protobuf)
-        NATS-->>API: Acknowledge publish
-        API-->>Client: HTTP 201 Created (with new source data)
-    end
-    alt DELETE /sources/{id} (Delete Source)
-        API->>Postgres: Delete source record
-        Postgres-->>API: Acknowledge delete
-        API->>NATS: Publish removed.source (RemovedSource Protobuf)
-        NATS-->>API: Acknowledge publish
-        API-->>Client: HTTP 204 No Content
-    end
-    alt GET /sources (Get All Sources)
-        API->>Postgres: Query all sources
-        Postgres-->>API: Return source records
-        API-->>Client: HTTP 200 OK (with source data)
-    end
-    alt GET /news (Get All News - Future)
-        API->>Qdrant: Query all events
-        Qdrant-->>API: Return event data
-        API-->>Client: HTTP 200 OK (with news data)
-    end
+    Client->>API: POST /ingest with raw events
+    API->>API: Validate event structure
+    API->>NATS: Publish raw.events
+    NATS-->>API: Acknowledge publish
+    API-->>Client: HTTP 200 OK
+    
+    NATS-->>Filter: Deliver raw.events message
+    Filter->>Qdrant: Upsert relevant events
 ```
 
 ### Internal Logic Flow
 
-The internal processing within the `api` service for a source creation request:
+The internal processing within the `api` service for an ingest request:
 
 ```mermaid
 flowchart TD
-    A["Start: Receive POST /sources request"] --> B{"Validate Input<br/>name, type, config"}
-    B -->|Valid| C["Call SourceLogic.create_source(db_session, ...)"]
+    A["Start: Receive POST /ingest request"] --> B{"Validate Input<br/>event structure"}
+    B -->|Valid| C["Publish RawEvent to NATS"]
     B -->|Invalid| G["Log Error"]
-    C -->|Success| D["Construct NewSource Protobuf Message"]
+    C -->|Success| D["Return HTTP 200 OK"]
     C -->|Failure| G
-    D --> E["Publish NewSource to NATS"]
-    E --> F["Return HTTP 201 Created<br/>with new source data"]
     G --> H["Return HTTP 500 Internal Server Error"]
 
 ```
