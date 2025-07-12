@@ -77,17 +77,22 @@ docker compose \
   -f deployment/docker-compose.services.yml \
   up -d "$@"
 
+echo " "
+echo " "
+echo "                                🕵️‍♂️🤖 Sentinel AI 🕵️‍♂️🤖"
+echo "            deployment initiated. Check Docker logs via Portainer for status."
+echo "   "
+echo "                                   🔗 Links 🔗"
+echo "   "
+echo "  🌎  Sentinel-AI Web UI          http://localhost:8501"
+echo "  🧩  OpenAPI Specs               http://localhost:8000/docs, http://localhost:8000/redoc"
+echo "  🗃️ OpenAPI JSON Specs          http://localhost:8000/openapi.json"
+echo "   "
+echo "  🐳  Portainer Dashboard         http://localhost:${PORTAINER_PORT}"
+echo "  🧠  Qdrant Dashboard            http://localhost:6333/dashboard"
+echo "  🐘  Postgres Dashboard          http://localhost:16543"
+echo "  ✉️  NATS Dashboard              http://localhost:8502"
+echo "   "
+echo " "
 
-
-
-echo "
-Sentinel AI deployment initiated. Check Docker logs via Portainer for status."
-#echo "Traefik Dashboard: http://localhost:${TRAEFIK_DASHBOARD_PORT}"
-#echo "Web UI: http://localhost:${TRAEFIK_HTTP_PORT}/web"
-echo "Sentinel-AI Web UI: http://localhost:8501"
-echo "Portainer: http://localhost:${PORTAINER_PORT}"
-#echo "API: http://localhost:${TRAEFIK_HTTP_PORT}/api"
-echo "NATS Dashboard: http://localhost:8502"
-echo "Qdrant Dashboard: http://localhost:6333/dashboard"
-echo "Postgres Dashboard: http://localhost:16543"
 

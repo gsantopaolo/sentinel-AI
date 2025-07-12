@@ -1,251 +1,281 @@
-import logging
-from fastapi import FastAPI, Response, status, Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 import os
-from dotenv import load_dotenv
 import json
+import logging
+import threading
+from typing import List, Optional
 from datetime import datetime
 
-from src.lib_py.models.models import Base, Source
-from src.lib_py.logic.source_logic import SourceLogic
+from fastapi import FastAPI, Depends, HTTPException, Response, status
+from pydantic import BaseModel, HttpUrl
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
+
+from dotenv import load_dotenv
+from src.lib_py.models.models import Base as ModelsBase, Source as SourceModel
 from src.lib_py.middlewares.jetstream_publisher import JetStreamPublisher
-from src.lib_py.gen_types import raw_event_pb2, new_source_pb2, removed_source_pb2
 from src.lib_py.middlewares.readiness_probe import ReadinessProbe
-import threading
-import asyncio
+from src.lib_py.gen_types import raw_event_pb2, new_source_pb2, removed_source_pb2
+from src.lib_py.logic.source_logic import SourceLogic
 
-# Load environment variables from .env file
+# ————— Environment & Logging —————
 load_dotenv()
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format=os.getenv("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+)
+logger = logging.getLogger("sentinel-api")
 
-# Get log level from env
-log_level_str = os.getenv('LOG_LEVEL', 'INFO').upper()
-log_level = getattr(logging, log_level_str, logging.INFO)
-
-# Get log format from env
-log_format = os.getenv('LOG_FORMAT', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-# Configure logging
-logging.basicConfig(level=log_level, format=log_format)
-logger = logging.getLogger(__name__)
-
-app = FastAPI()
-
-READINESS_TIME_OUT = int(os.getenv('API_READINESS_TIME_OUT', 500))
-
+# ————— Database Setup —————
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    logger.error("❌ DATABASE_URL environment variable not set.")
-    raise ValueError("DATABASE_URL environment variable not set.")
+    logger.critical("❌ DATABASE_URL must be set, exiting.")
+    raise RuntimeError("DATABASE_URL not set")
 
-NATS_URL = os.getenv("NATS_URL", "nats://localhost:4222")
-NATS_RECONNECT_TIME_WAIT = int(os.getenv("NATS_RECONNECT_TIME_WAIT", 10))
-NATS_CONNECT_TIMEOUT = int(os.getenv("NATS_CONNECT_TIMEOUT", 10))
-NATS_MAX_RECONNECT_ATTEMPTS = int(os.getenv("NATS_MAX_RECONNECT_ATTEMPTS", 60))
-READINESS_TIME_OUT = int(os.getenv('API_READINESS_TIME_OUT', 500))
-
-logger.info(f"🛠️ Starting FastAPI application with LOG_LEVEL: {log_level_str}")
-logger.info(f"🗄️ Connecting to database: {DATABASE_URL.split('@')[-1]}") # Mask password
-logger.info(f"✉️ Connecting to NATS: {NATS_URL}")
-
-# SQLAlchemy setup
 engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Create database tables (if they don't exist)
-Base.metadata.create_all(bind=engine)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+ModelsBase.metadata.create_all(bind=engine)
 logger.info("✅ Database tables checked/created.")
 
-# JetStream Publishers
-raw_events_publisher: JetStreamPublisher = None
-new_source_publisher: JetStreamPublisher = None
-removed_source_publisher: JetStreamPublisher = None
+# ————— FastAPI & Dependency —————
+app = FastAPI()
+
+def get_db() -> Session:
+    db = SessionLocal()
+    try:
+        logger.debug("🐛 Opened DB session")
+        yield db
+    finally:
+        db.close()
+        logger.debug("🐛 Closed DB session")
+
+# ————— NATS JetStream Setup —————
+NATS_URL = os.getenv("NATS_URL", "nats://localhost:4222")
+NATS_OPTIONS = dict(
+    nats_url=NATS_URL,
+    nats_reconnect_time_wait=int(os.getenv("NATS_RECONNECT_TIME_WAIT", 10)),
+    nats_connect_timeout=int(os.getenv("NATS_CONNECT_TIMEOUT", 10)),
+    nats_max_reconnect_attempts=int(os.getenv("NATS_MAX_RECONNECT_ATTEMPTS", 60)),
+)
+
+raw_events_publisher: JetStreamPublisher
+new_source_publisher: JetStreamPublisher
+removed_source_publisher: JetStreamPublisher
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("🔥 Application startup event triggered.")
-    # Start the readiness probe server in a separate thread
-    readiness_probe = ReadinessProbe(readiness_time_out=READINESS_TIME_OUT)
-    readiness_probe_thread = threading.Thread(target=readiness_probe.start_server, daemon=True)
-    readiness_probe_thread.start()
-    logger.info("✅ Readiness probe server started.")
+    logger.info("🛠️ API starting…")
 
+    # readiness probe
+    probe = ReadinessProbe(readiness_time_out=int(os.getenv("API_READINESS_TIME_OUT", 500)))
+    threading.Thread(target=probe.start_server, daemon=True).start()
+    logger.info("✅ Readiness probe started.")
+
+    # JetStream publishers
     global raw_events_publisher, new_source_publisher, removed_source_publisher
     raw_events_publisher = JetStreamPublisher(
         subject="raw.events",
         stream_name="raw-events-stream",
-        nats_url=NATS_URL,
-        nats_reconnect_time_wait=NATS_RECONNECT_TIME_WAIT,
-        nats_connect_timeout=NATS_CONNECT_TIMEOUT,
-        nats_max_reconnect_attempts=NATS_MAX_RECONNECT_ATTEMPTS,
+        **NATS_OPTIONS,
         message_type="RawEvent"
     )
     new_source_publisher = JetStreamPublisher(
         subject="new.source",
         stream_name="new-source-stream",
-        nats_url=NATS_URL,
-        nats_reconnect_time_wait=NATS_RECONNECT_TIME_WAIT,
-        nats_connect_timeout=NATS_CONNECT_TIMEOUT,
-        nats_max_reconnect_attempts=NATS_MAX_RECONNECT_ATTEMPTS,
+        **NATS_OPTIONS,
         message_type="NewSource"
     )
     removed_source_publisher = JetStreamPublisher(
         subject="removed.source",
         stream_name="removed-source-stream",
-        nats_url=NATS_URL,
-        nats_reconnect_time_wait=NATS_RECONNECT_TIME_WAIT,
-        nats_connect_timeout=NATS_CONNECT_TIMEOUT,
-        nats_max_reconnect_attempts=NATS_MAX_RECONNECT_ATTEMPTS,
+        **NATS_OPTIONS,
         message_type="RemovedSource"
     )
-    try:
-        await raw_events_publisher.connect()
-        await new_source_publisher.connect()
-        await removed_source_publisher.connect()
-        logger.info("✅ Connected to NATS JetStream publishers.")
-    except Exception as e:
-        logger.error(f"❌ Failed to connect to NATS JetStream: {e}")
-        # Depending on criticality, you might want to raise the exception or handle it gracefully
 
+    for pub in (raw_events_publisher, new_source_publisher, removed_source_publisher):
+        try:
+            await pub.connect()
+        except Exception as e:
+            logger.error(f"❌ Publisher connect error {pub.subject}: {e}")
+    logger.info("✅ NATS JetStream publishers ready.")
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    logger.info("🛑 Application shutdown event triggered.")
-    try:
-        await raw_events_publisher.close()
-        await new_source_publisher.close()
-        await removed_source_publisher.close()
-        logger.info("✅ Closed NATS JetStream publishers.")
-    except Exception as e:
-        logger.error(f"❌ Error closing NATS JetStream publishers: {e}")
+    logger.info("🛑 API shutting down…")
+    for pub in (raw_events_publisher, new_source_publisher, removed_source_publisher):
+        try:
+            await pub.close()
+            logger.info(f"✅ Closed publisher {pub.subject}")
+        except Exception as e:
+            logger.error(f"❌ Error closing {pub.subject}: {e}")
 
-# Dependency to get a database session
-def get_db():
-    db = SessionLocal()
-    try:
-        logger.debug("🐛 Database session opened.")
-        yield db
-    finally:
-        db.close()
-        logger.debug("🐛 Database session closed.")
+# ————— Pydantic Schemas —————
+class Event(BaseModel):
+    id: str
+    source: str
+    title: str
+    body: Optional[str] = None
+    published_at: datetime
 
-@app.post("/ingest", status_code=status.HTTP_202_ACCEPTED)
-async def ingest_data(payload: dict):
-    logger.info(f"📱 Received ingest request: {payload.get('id', 'N/A')}")
-    # Assuming payload contains 'id', 'title', 'content', 'timestamp', 'source'
-    raw_event = raw_event_pb2.RawEvent(
-        id=payload.get("id", ""),
-        title=payload.get("title", ""),
-        content=payload.get("content", ""),
-        timestamp=payload.get("timestamp", datetime.utcnow().isoformat()),
-        source=payload.get("source", "api")
-    )
-    try:
-        await raw_events_publisher.publish(raw_event)
-        logger.info(f"✉️ Published raw event to NATS: {raw_event.id}")
-    except Exception as e:
-        logger.error(f"❌ Failed to publish raw event {raw_event.id} to NATS: {e}")
-        raise HTTPException(status_code=500, detail="Failed to publish event to NATS")
-    return {"message": "Data ingestion accepted and queued for processing"}
+class SourceBase(BaseModel):
+    name: str
+    url: HttpUrl
+    title: str
+    body: Optional[str] = None
+    published_at: datetime
 
-@app.get("/retrieve", status_code=status.HTTP_200_OK)
-def retrieve_data(batch_id: str):
-    logger.info(f"📱 Received retrieve request for batch_id: {batch_id}")
-    return {"batch_id": batch_id, "data": "some retrieved data"}
+class SourceCreate(SourceBase):
+    pass
 
-@app.get("/news", status_code=status.HTTP_200_OK)
-def get_news():
-    logger.info("📱 Received request for all news.")
-    return [{"id": 1, "title": "News 1"}, {"id": 2, "title": "News 2"}]
+class SourceUpdate(BaseModel):
+    name: Optional[str] = None
+    url: Optional[HttpUrl] = None
+    title: Optional[str] = None
+    body: Optional[str] = None
+    published_at: Optional[datetime] = None
+    is_active: Optional[bool] = None
 
-@app.get("/news/filtered", status_code=status.HTTP_200_OK)
-def get_filtered_news():
-    logger.info("📱 Received request for filtered news.")
-    return [{"id": 1, "title": "Filtered News 1"}]
+class SourceRead(BaseModel):
+    id: int
+    name: str
+    url: Optional[HttpUrl] = None
+    title: Optional[str] = None
+    body: Optional[str] = None
+    published_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    is_active: bool
 
-@app.get("/news/ranked", status_code=status.HTTP_200_OK)
-def get_ranked_news():
-    logger.info("📱 Received request for ranked news.")
-    return [{"id": 1, "title": "Ranked News 1", "score": 100}]
+    class Config:
+        orm_mode = True
 
-@app.post("/news/rerank", status_code=status.HTTP_200_OK)
-def rerank_news():
-    logger.info("📱 Received request to rerank news.")
-    return {"message": "News reranked successfully"}
+# ————— Ingest Endpoint —————
+@app.post("/ingest", status_code=status.HTTP_200_OK)
+async def ingest_data(events: List[Event]):
+    logger.info(f"📱 Received ingest batch of {len(events)} events")
+    for ev in events:
+        raw = raw_event_pb2.RawEvent(
+            id=ev.id,
+            title=ev.title,
+            content=ev.body or "",
+            timestamp=ev.published_at.isoformat(),
+            source=ev.source,
+        )
+        try:
+            await raw_events_publisher.publish(raw)
+            logger.info(f"✉️ Published raw event: {ev.id}")
+        except Exception as e:
+            logger.error(f"❌ Publishing raw event {ev.id} failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to publish raw event")
+    return {"message": "ACK"}
 
-@app.get("/sources", status_code=status.HTTP_200_OK)
-def get_sources(db: Session = Depends(get_db)):
-    logger.info("📱 Received request for all sources.")
-    source_logic = SourceLogic(db)
-    sources = source_logic.get_all_sources()
-    logger.info(f"🗄️ Retrieved {len(sources)} sources.")
-    return sources
-
-@app.post("/sources", status_code=status.HTTP_201_CREATED)
-async def create_source(name: str, type: str, config: dict = None, db: Session = Depends(get_db)):
-    logger.info(f"📱 Received request to create source: {name} ({type})")
-    source_logic = SourceLogic(db)
-    try:
-        new_source_db = source_logic.create_source(name=name, type=type, config=config)
-        logger.info(f"🗄️ Source created in DB: {new_source_db.id}")
-    except Exception as e:
-        logger.error(f"❌ Failed to create source in DB: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create source in database")
+# ————— Helper for Model Conversion —————
+def source_to_read_model(source: SourceModel) -> dict:
+    config = source.config or {}
+    published_at_str = config.get("published_at")
+    published_at_dt = datetime.fromisoformat(published_at_str) if published_at_str else None
     
-    new_source_pb = new_source_pb2.NewSource(
-        id=new_source_db.id,
-        name=new_source_db.name,
-        type=new_source_db.type,
-        config_json=json.dumps(new_source_db.config) if new_source_db.config else "{}",
-        is_active=new_source_db.is_active
+    url_str = config.get("url")
+    
+    return {
+        "id": source.id,
+        "name": source.name,
+        "url": url_str,
+        "title": config.get("title"),
+        "body": config.get("body"),
+        "published_at": published_at_dt,
+        "created_at": source.created_at,
+        "updated_at": source.updated_at,
+        "is_active": source.is_active,
+    }
+
+# ————— Sources CRUD —————
+@app.get("/sources", response_model=List[SourceRead])
+def list_sources(db: Session = Depends(get_db)):
+    logger.info("📱 GET /sources")
+    sources = SourceLogic(db).get_all_sources()
+    logger.info(f"🗄️ Returning {len(sources)} sources")
+    return [source_to_read_model(s) for s in sources]
+
+@app.get("/sources/{source_id}", response_model=SourceRead)
+def read_source(source_id: int, db: Session = Depends(get_db)):
+    logger.info(f"📱 GET /sources/{source_id}")
+    src = SourceLogic(db).get_source(source_id)
+    if not src:
+        logger.warning(f"⚠️ Source {source_id} not found")
+        raise HTTPException(status_code=404, detail="Source not found")
+    logger.info(f"🗄️ Found source id={src.id}")
+    return source_to_read_model(src)
+
+@app.post("/sources", response_model=SourceRead, status_code=status.HTTP_201_CREATED)
+async def create_source(payload: SourceCreate, db: Session = Depends(get_db)):
+    logger.info(f"📱 Creating source {payload.name}")
+    config = {
+        "url": str(payload.url),
+        "title": payload.title,
+        "body": payload.body,
+        "published_at": payload.published_at.isoformat() if payload.published_at else None
+    }
+    src = SourceLogic(db).create_source(
+        name=payload.name,
+        type="feed",  # Assuming a default type as it's not in payload
+        config=config
+    )
+    logger.info(f"🗄️ Created source id={src.id}")
+    msg = new_source_pb2.NewSource(
+        id=src.id,
+        name=src.name,
+        type=src.type,
+        config_json=json.dumps(src.config) if src.config else "{}",
+        is_active=src.is_active,
     )
     try:
-        await new_source_publisher.publish(new_source_pb)
-        logger.info(f"✉️ Published new source event to NATS: {new_source_db.id}")
+        await new_source_publisher.publish(msg)
+        logger.info(f"✉️ Published new.source event id={src.id}")
     except Exception as e:
-        logger.error(f"❌ Failed to publish new source event {new_source_db.id} to NATS: {e}")
-        # This is a critical error, but we might still return the DB success
+        logger.error(f"❌ Publishing new.source id={src.id} failed: {e}")
+    return source_to_read_model(src)
 
-    return new_source_db
-
-@app.get("/sources/{source_id}", status_code=status.HTTP_200_OK)
-def get_source_by_id(source_id: int, db: Session = Depends(get_db)):
-    logger.info(f"📱 Received request for source_id: {source_id}")
-    source_logic = SourceLogic(db)
-    source = source_logic.get_source(source_id)
-    if not source:
-        logger.warning(f"⚠️ Source {source_id} not found.")
+@app.put("/sources/{source_id}", response_model=SourceRead)
+def update_source(source_id: int, payload: SourceUpdate, db: Session = Depends(get_db)):
+    logger.info(f"📱 PUT /sources/{source_id}")
+    existing = SourceLogic(db).get_source(source_id)
+    if not existing:
+        logger.warning(f"⚠️ Source {source_id} not found for update")
         raise HTTPException(status_code=404, detail="Source not found")
-    logger.info(f"🗄️ Retrieved source: {source.name}")
-    return source
 
-@app.put("/sources/{source_id}", status_code=status.HTTP_200_OK)
-def update_source(source_id: int, name: str = None, type: str = None, config: dict = None, is_active: bool = None, db: Session = Depends(get_db)):
-    logger.info(f"📱 Received request to update source_id: {source_id}")
-    source_logic = SourceLogic(db)
-    updated_source = source_logic.update_source(source_id=source_id, name=name, type=type, config=config, is_active=is_active)
-    if not updated_source:
-        logger.warning(f"⚠️ Source {source_id} not found for update.")
-        raise HTTPException(status_code=404, detail="Source not found")
-    logger.info(f"🗄️ Source {source_id} updated in DB.")
-    return updated_source
+    update_data = payload.dict(exclude_unset=True)
+    config = existing.config or {}
+
+    if 'url' in update_data:
+        config['url'] = str(update_data['url'])
+    if 'title' in update_data:
+        config['title'] = update_data['title']
+    if 'body' in update_data:
+        config['body'] = update_data['body']
+    if 'published_at' in update_data:
+        config['published_at'] = update_data['published_at'].isoformat() if update_data['published_at'] else None
+
+    updated = SourceLogic(db).update_source(
+        source_id=source_id,
+        name=payload.name or existing.name,
+        config=config,
+        is_active=payload.is_active if payload.is_active is not None else existing.is_active,
+    )
+    logger.info(f"🗄️ Updated source id={updated.id}")
+    return source_to_read_model(updated)
 
 @app.delete("/sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_source(source_id: int, db: Session = Depends(get_db)):
-    logger.info(f"📱 Received request to delete source_id: {source_id}")
-    source_logic = SourceLogic(db)
-    if not source_logic.delete_source(source_id):
-        logger.warning(f"⚠️ Source {source_id} not found for deletion.")
+    logger.info(f"📱 DELETE /sources/{source_id}")
+    if not SourceLogic(db).delete_source(source_id):
+        logger.warning(f"⚠️ Source {source_id} not found for deletion")
         raise HTTPException(status_code=404, detail="Source not found")
-    logger.info(f"🗄️ Source {source_id} deleted from DB.")
-    
-    removed_source_pb = removed_source_pb2.RemovedSource(id=source_id)
+    logger.info(f"🗄️ Deleted source id={source_id}")
+    msg = removed_source_pb2.RemovedSource(id=source_id)
     try:
-        await removed_source_publisher.publish(removed_source_pb)
-        logger.info(f"✉️ Published removed source event to NATS: {source_id}")
+        await removed_source_publisher.publish(msg)
+        logger.info(f"✉️ Published removed.source event id={source_id}")
     except Exception as e:
-        logger.error(f"❌ Failed to publish removed source event {source_id} to NATS: {e}")
-        # This is a critical error, but we might still return the DB success
-
+        logger.error(f"❌ Publishing removed.source id={source_id} failed: {e}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -1,16 +1,27 @@
 # sentinel-AI
+Wen I read the specs for this project, and one of the requirements was to make the application to work at scale 
+i suddenly told myself, to make it work at scale agents needs to become microservice able to work asynchronously whit an orchestrator logic, 
+spread over various microservices driven by a message bus to deliver asynchronous operations requests.
+In this scenario each agent has become a microservice with its own responsibility driven by an orchestrator, the scheduler.
+You can see the full list of microservice and their own responsibility on the [**service matrix**](docs/architecture.md#service-matrix):
+<br />
+> 💡 **Tip:** If you are interested in a full agentic AI solution, please have a look at [Reforge-AI](https://github.com/gsantopaolo/reforge-ai)
 
-An **event-driven**, **microservice** platform for real-time feed ingestion, filtering, ranking, and anomaly detection—designed to run on Kubernetes and scale to millions of users. 🚀🐳
+<br />
+Sentinel-AI is an **event-driven**, **microservice** platform for real-time feed ingestion, filtering, ranking, 
+and anomaly detection—designed to run on Kubernetes and scale to millions of users. 🚀🐳
+
+
 
 **Key Features:**
 
-* 🔗 **Dynamic Ingestion:** Subscribe to any data feed (RSS, APIs, webhooks, etc.) and ingest events in real time.
-* 🧹 **Smart Filtering:** Apply custom relevance rules or plug in ML models to filter events.
-* ⚖️ **Deterministic Ranking:** Balance importance & recency with a configurable scoring algorithm; support on-the-fly reordering via APIs.
-* 🔍 **Searchable Storage:** Persist full event metadata, embeddings, and scores in a vector database for fast semantic search.
+* 🔗 [**Dynamic Ingestion](docs/api.md):** Subscribe to any data feed (RSS, APIs, webhooks, etc.) and ingest events in real time.
+* 🧹 [**Smart Filtering](docs/filter.md):** Apply custom relevance rules or plug in ML models to filter events.
+* ⚖️ [**Deterministic Ranking](docs/ranker.md):** Balance importance & recency with a configurable scoring algorithm; support on-the-fly reordering via APIs.
+* 🔍 [**Searchable Storage](docs/inspector.md):** Persist full event metadata, embeddings, and scores in a vector database for fast semantic search.
 * 🚨 [**Anomaly Detection**](docs/inspector.md): Automatically detect and flag unusual or malformed events.
-* 📈 **High Scalability:** Built on NATS JetStream and Kubernetes auto-scaling to serve millions of users with minimal latency.
-* 🖥️ **Interactive Dashboard:** List, filter, rerank, delete events and sources, and visualize feeds in real time through a web UI.
+* 📈 [**High Scalability](docs/architecture.md):** Built on NATS JetStream and Kubernetes auto-scaling to serve millions of users with minimal latency.
+* 🖥️ [**Interactive Dashboard:](docs/web.md)** List, filter, rerank, delete events and sources, and visualize feeds in real time through a web UI.
 
 ---
 

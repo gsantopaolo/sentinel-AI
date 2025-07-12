@@ -29,18 +29,19 @@ services:
       - "8000:8000"
     networks:
       - sentinel-backend-network
+      - sentinel-frontend-network
 #      - sentinel-frontend-network # For Traefik exposure
 #    depends_on:
 #      postgres:
 #        condition: service_started
 #      nats:
 #        condition: service_started
-    healthcheck:
-      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
-      interval: 60s
-      start_period: 10s
-      timeout: 3s
-      retries: 3
+#    healthcheck:
+#      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
+#      interval: 60s
+#      start_period: 10s
+#      timeout: 3s
+#      retries: 3
 #    labels:
 #      - "traefik.enable=true"
 #      # 1) Match requests to localhost + /api

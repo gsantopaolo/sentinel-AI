@@ -53,7 +53,13 @@ docker compose \
 
 
 
-echo "\nSentinel AI cluster stopped and removed."
+echo ""
+echo ""
+
+echo "   Sentinel AI"
+echo " ✔ Cluster stopped and removed"
+echo ""
+echo ""
 
 # Optionally remove Docker networks if they are no longer in use by other containers
 # Note: This will only remove networks if they are not attached to any running containers.

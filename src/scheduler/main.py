@@ -46,7 +46,7 @@ async def new_source_event_handler(msg: Msg):
         new_source = new_source_pb2.NewSource()
         new_source.ParseFromString(msg.data)
         logger.info(f"✉️ Received new source event: ID={new_source.id}, Name={new_source.name}, Type={new_source.type}")
-        # Here, you would add logic to schedule polling for this new source
+        # todo: Here, you would add logic to schedule polling for this new source
         # For now, just acknowledge the message
         await msg.ack()
         logger.info(f"✅ Acknowledged new source event: {new_source.id}")
@@ -59,7 +59,7 @@ async def removed_source_event_handler(msg: Msg):
         removed_source = removed_source_pb2.RemovedSource()
         removed_source.ParseFromString(msg.data)
         logger.info(f"✉️ Received removed source event: ID={removed_source.id}")
-        # Here, you would add logic to remove polling jobs for this source
+        # todo: Here, you would add logic to remove polling jobs for this source
         # For now, just acknowledge the message
         await msg.ack()
         logger.info(f"✅ Acknowledged removed source event: {removed_source.id}")
@@ -103,6 +103,7 @@ async def main():
     )
     removed_source_subscriber.set_event_handler(removed_source_event_handler)
 
+    # todo implement poll.source events when triggered by AsyncIOScheduler
     # Placeholder for emitting poll.source events
     # In a real scenario, this would be triggered by APScheduler based on source configurations
     # For demonstration, let's just emit a dummy poll.source event

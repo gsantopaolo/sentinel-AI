@@ -1,62 +1,85 @@
-
+import logging
 import requests
+import os
 import json
+from datetime import datetime
 
-BASE_URL = "http://127.0.0.1:8000"
+# ————— Configuration & Logging —————
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format=os.getenv("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+)
+logger = logging.getLogger("sentinel-tester")
 
-def test_endpoint(method, endpoint, data=None):
-    """
-    Tests a given endpoint of the API.
+BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 
-    Args:
-        method (str): The HTTP method to use (e.g., "GET", "POST").
-        endpoint (str): The API endpoint to test (e.g., "/news").
-        data (dict, optional): The data to send with the request. Defaults to None.
-    """
+# ————— Helper Function —————
+def call_api(method: str, path: str, payload=None):
+    url = f"{BASE}{path}"
+    logger.info(f"📱 {method} {path}")
     try:
-        response = requests.request(method, BASE_URL + endpoint, json=data)
-        print(f"Response from {method} {endpoint}:")
-        print(f"Status Code: {response.status_code}")
-        try:
-            print(f"Response JSON: {response.json()}")
-        except json.JSONDecodeError:
-            print(f"Response Text: {response.text}")
-    except requests.exceptions.RequestException as e:
-        print(f"An error occurred: {e}")
+        resp = requests.request(method, url, json=payload, timeout=5)
+        status = resp.status_code
+        if 200 <= status < 300:
+            logger.info(f"🗄️ {method} {path} -> {status}")
+        elif 400 <= status < 500:
+            logger.warning(f"⚠️ {method} {path} -> {status}: {resp.text}")
+        else:
+            logger.error(f"❌ {method} {path} -> {status}: {resp.text}")
+        return resp
+    except requests.RequestException as e:
+        logger.error(f"❌ Error calling {method} {path}: {e}")
+        return None
 
+# ————— Test Sequence —————
 if __name__ == "__main__":
-    # Test all endpoints
-    print("--- Testing POST /ingest ---")
-    test_endpoint("POST", "/ingest")
+    # 1. Ingest
+    events = [
+        {
+            "id": "evt-001",
+            "source": "tester",
+            "title": "Test Event",
+            "body": "This is a test.",
+            "published_at": datetime.utcnow().isoformat() + "Z"
+        }
+    ]
+    call_api("POST", "/ingest", events)
 
-    print("\n--- Testing GET /retrieve?batch_id=123 ---")
-    test_endpoint("GET", "/retrieve?batch_id=123")
+    # 2. List sources (should be empty or existing)
+    list_resp = call_api("GET", "/sources")
+    sources = list_resp.json() if list_resp and list_resp.ok else []
 
-    print("\n--- Testing GET /news ---")
-    test_endpoint("GET", "/news")
+    # 3. Create Source
+    payload = {
+        "name": "test-source",
+        "url": "https://example.com",
+        "title": "Example Title",
+        "body": "Example body",
+        "published_at": datetime.utcnow().isoformat() + "Z"
+    }
+    create_resp = call_api("POST", "/sources", payload)
+    new_id = create_resp.json().get("id") if create_resp and create_resp.ok else None
 
-    print("\n--- Testing GET /news/filtered ---")
-    test_endpoint("GET", "/news/filtered")
+    # 4. Get by ID
+    if new_id:
+        call_api("GET", f"/sources/{new_id}")
 
-    print("\n--- Testing GET /news/ranked ---")
-    test_endpoint("GET", "/news/ranked")
+        # 5. Update
+        upd_payload = {
+            "name": "test-source-upd",
+            "url": "https://example.org",
+            "title": "Updated Title",
+            "body": "Updated body",
+            "published_at": datetime.utcnow().isoformat() + "Z",
+            "is_active": False
+        }
+        call_api("PUT", f"/sources/{new_id}", upd_payload)
 
-    print("\n--- Testing POST /news/rerank ---")
-    test_endpoint("POST", "/news/rerank")
+        # 6. Delete
+        call_api("DELETE", f"/sources/{new_id}")
 
-    print("\n--- Testing GET /sources ---")
-    test_endpoint("GET", "/sources")
-
-    print("\n--- Testing POST /sources ---")
-    test_endpoint("POST", "/sources", data={"name": "Test Source", "type": "RSS"})
-
-    print("\n--- Testing GET /sources/1 ---")
-    test_endpoint("GET", "/sources/1")
-
-    print("\n--- Testing PUT /sources/1 ---")
-    test_endpoint("PUT", "/sources/1", data={"name": "Updated Source", "is_active": False})
-
-    print("\n--- Testing DELETE /sources/1 ---")
-    test_endpoint("DELETE", "/sources/1")
-
-    
+        # 7. Confirm deletion
+        call_api("GET", f"/sources/{new_id}")
+    else:
+        logger.error("❌ Could not create source; aborting further tests.")
