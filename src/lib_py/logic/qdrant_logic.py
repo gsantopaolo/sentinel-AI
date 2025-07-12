@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import hashlib
 from datetime import datetime
@@ -38,33 +39,36 @@ class QdrantLogic:
     def ensure_collection_exists(self) -> None:
         """Ensure the specified collection exists with proper configuration.
         
-        Creates the collection if it doesn't exist, or verifies its configuration.
+        If the collection already exists, it will be deleted and recreated to ensure
+        it matches the current model's vector configuration. This is a robust
+        approach to prevent configuration mismatch errors.
         
         Raises:
             RuntimeError: If there's an error creating or verifying the collection.
         """
-        self.logger.info(f"🔍 Ensuring collection '{self.collection_name}' exists...")
+        self.logger.info(f"🔍 Ensuring collection '{self.collection_name}' is correctly configured...")
         try:
-            collections = self.client.get_collections()
-            collection_names = [collection.name for collection in collections.collections]
-            
-            if self.collection_name not in collection_names:
-                self.logger.info(f"🆕 Creating collection '{self.collection_name}' with vector size {self.vector_size}")
-                self.client.create_collection(
-                    collection_name=self.collection_name,
-                    vectors_config=qdrant_models.VectorParams(
-                        size=self.vector_size,
-                        distance=qdrant_models.Distance.COSINE
-                    )
+            if self.client.collection_exists(collection_name=self.collection_name):
+                self.logger.warning(
+                    f"🗑️ Collection '{self.collection_name}' already exists. "
+                    f"Recreating it to ensure vector configuration is up-to-date."
                 )
-                self._create_collection_indexes()
-                self.logger.info(f"✅ Successfully created collection '{self.collection_name}'")
-            else:
-                self.logger.info(f"🔍 Collection '{self.collection_name}' already exists")
+                self.client.delete_collection(collection_name=self.collection_name)
+
+            self.logger.info(f"🆕 Creating collection '{self.collection_name}' with vector size {self.vector_size}")
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=models.VectorParams(
+                    size=self.vector_size,
+                    distance=models.Distance.COSINE
+                )
+            )
+            self._create_collection_indexes()
+            self.logger.info(f"✅ Successfully created and configured collection '{self.collection_name}'")
                 
         except Exception as e:
             error_msg = f"❌ Failed to ensure collection '{self.collection_name}' exists: {str(e)}"
-            self.logger.error(error_msg)
+            self.logger.error(error_msg, exc_info=True)
             raise RuntimeError(error_msg) from e
 
     def search_events(
@@ -140,7 +144,7 @@ class QdrantLogic:
             self.logger.error(error_msg)
             raise RuntimeError(error_msg) from e
             
-    def retrieve_event_by_id(self, event_id: str) -> Optional[Dict[str, Any]]:
+    async def retrieve_event_by_id(self, event_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a single event by its ID.
         
         Args:
@@ -159,33 +163,38 @@ class QdrantLogic:
         self.logger.info(f"🔍 Retrieving event ID: {event_id}")
         
         try:
+            loop = asyncio.get_event_loop()
+            
             # For retrieval, we need to search by the original_id field
-            result = self.client.scroll(
-                collection_name=self.collection_name,
-                scroll_filter=models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key="original_id",
-                            match=models.MatchValue(value=event_id)
-                        )
-                    ]
-                ),
-                limit=1,
-                with_payload=True,
-                with_vectors=False
+            result = await loop.run_in_executor(
+                None,
+                lambda: self.client.scroll(
+                    collection_name=self.collection_name,
+                    scroll_filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="original_id",
+                                match=models.MatchValue(value=str(event_id))  # Ensure string comparison
+                            )
+                        ]
+                    ),
+                    limit=1,
+                    with_payload=True,
+                    with_vectors=False
+                )
             )
-            result = result[0]  # Extract the list of points from the scroll result
             
             if not result or len(result) == 0:
                 self.logger.warning(f"⚠️ Event not found: {event_id}")
                 return None
                 
             self.logger.info(f"✅ Retrieved event: {event_id}")
+            # Extract the payload from the first (and should be only) result
             return result[0].payload
             
         except Exception as e:
             error_msg = f"❌ Failed to retrieve event {event_id}: {str(e)}"
-            self.logger.error(error_msg)
+            self.logger.error(error_msg, exc_info=True)
             raise RuntimeError(error_msg) from e
 
     def get_all_events(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
@@ -221,7 +230,7 @@ class QdrantLogic:
             self.logger.error(error_msg)
             raise RuntimeError(error_msg) from e
             
-    def upsert_event(self, event_data: Dict[str, Any]) -> bool:
+    async def upsert_event(self, event_data: Dict[str, Any]) -> bool:
         """Upsert an event into the Qdrant collection.
         
         If an event with the same ID exists, it will be updated. Otherwise, a new event will be created.
@@ -236,7 +245,7 @@ class QdrantLogic:
             ValueError: If required fields are missing.
         """
         event_id = event_data.get('id', 'N/A')
-        self.logger.info(f"📥 Upserting event: {event_id}")
+        self.logger.info(f"📥 Received upsert event: {event_id} (store entity inside the vector db)")
         
         # Validate input
         if not event_id or event_id == 'N/A':
@@ -252,7 +261,12 @@ class QdrantLogic:
         try:
             # Generate embedding from content
             content = event_data["content"]
-            embedding = self.model.encode(content).tolist()
+            # Run the CPU-bound operation in a thread pool
+            loop = asyncio.get_event_loop()
+            embedding = await loop.run_in_executor(
+                None,
+                lambda: self.model.encode(content).tolist()
+            )
             
             # Create point structure with hashed ID
             point_id = self._hash_id(str(event_id))
@@ -261,26 +275,28 @@ class QdrantLogic:
                 vector=embedding,
                 payload={
                     **event_data,
-                    "original_id": event_id  # Store original ID in payload for reference
+                    "original_id": str(event_id)  # Ensure original_id is always a string
                 }
             )
             
-            # Execute upsert
-            self.client.upsert(
-                collection_name=self.collection_name,
-                points=[point],
-                wait=True
+            # Execute upsert in a thread since the Qdrant client is synchronous
+            await loop.run_in_executor(
+                None,
+                lambda: self.client.upsert(
+                    collection_name=self.collection_name,
+                    points=[point],
+                    wait=True
+                )
             )
             
             self.logger.info(f"✅ Successfully upserted event: {event_id}")
             return True
             
         except Exception as e:
-            error_msg = f"❌ Failed to upsert event {event_id}: {str(e)}"
-            self.logger.error(error_msg)
+            self.logger.error(f"❌ Failed to upsert event {event_id}: {str(e)}", exc_info=True)
             return False
 
-    def delete_events(self, ids: List[str]) -> int:
+    async def delete_events(self, ids: List[str]) -> int:
         """Delete multiple events by their original string IDs.
         
         Args:
@@ -299,6 +315,8 @@ class QdrantLogic:
         self.logger.info(f"🗑️ Deleting {len(ids)} events")
         
         try:
+            loop = asyncio.get_event_loop()
+            
             # Delete by filtering on the original_id field
             operations = []
             for id_ in ids:
@@ -309,7 +327,7 @@ class QdrantLogic:
                                 must=[
                                     models.FieldCondition(
                                         key="original_id",
-                                        match=models.MatchValue(value=id_)
+                                        match=models.MatchValue(value=str(id_))  # Ensure string comparison
                                     )
                                 ]
                             )
@@ -317,10 +335,13 @@ class QdrantLogic:
                     )
                 )
             
-            # Execute batch delete
-            result = self.client.batch(
-                collection_name=self.collection_name,
-                operations=operations
+            # Execute batch delete in a thread since the Qdrant client is synchronous
+            await loop.run_in_executor(
+                None,
+                lambda: self.client.batch(
+                    collection_name=self.collection_name,
+                    operations=operations
+                )
             )
             
             self.logger.info(f"✅ Deleted {len(ids)} events")
@@ -328,7 +349,7 @@ class QdrantLogic:
             
         except Exception as e:
             error_msg = f"❌ Failed to delete events: {str(e)}"
-            self.logger.error(error_msg)
+            self.logger.error(error_msg, exc_info=True)
             raise RuntimeError(error_msg) from e
             
     def count_events(self) -> int:
@@ -358,18 +379,18 @@ class QdrantLogic:
             raise RuntimeError(error_msg) from e
             
     def _hash_id(self, id_str: str) -> int:
-        """Convert a string ID to a consistent integer hash for Qdrant.
+        """Convert a string ID to a consistent positive integer hash for Qdrant.
         
         Args:
             id_str: The string ID to hash.
             
         Returns:
-            int: A 64-bit integer hash of the input string.
+            int: A positive 63-bit integer hash of the input string.
         """
         # Use SHA-256 and take the first 8 bytes (64 bits) for the hash
         hash_bytes = hashlib.sha256(id_str.encode('utf-8')).digest()[:8]
-        # Convert to a signed 64-bit integer
-        return int.from_bytes(hash_bytes, byteorder='big', signed=True)
+        # Convert to a positive 63-bit integer to ensure it's within Qdrant's limits
+        return int.from_bytes(hash_bytes, byteorder='big') & 0x7FFFFFFFFFFFFFFF
         
     def _create_collection_indexes(self):
         """Create necessary indexes on the collection for better query performance.

@@ -108,8 +108,14 @@ async def filtered_event_handler(msg: Msg):
             event_data['importance_score'] = importance_score
             event_data['recency_score'] = recency_score
             event_data['final_score'] = final_score
-            await qdrant_logic.upsert_event(event_data) # Upsert updates existing record
-            logger.info(f"🗄️ Event '{filtered_event.id}' scores updated in Qdrant.")
+            try:
+                success = await qdrant_logic.upsert_event(event_data)  # Upsert updates existing record
+                if success:
+                    logger.info(f"🗄️ Event '{filtered_event.id}' scores updated in Qdrant.")
+                else:
+                    logger.error(f"❌ Failed to update event '{filtered_event.id}' in Qdrant.")
+            except Exception as e:
+                logger.error(f"An error occurred while upserting to Qdrant: {e}")
         else:
             logger.warning(f"⚠️ Event '{filtered_event.id}' not found in Qdrant for score update.")
 

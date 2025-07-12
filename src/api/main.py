@@ -189,12 +189,18 @@ async def ingest_data(events: List[Event]):
             }
             
             # Store in Qdrant with vector embedding
-            if not await qdrant_logic.upsert_event(event_data):
-                logger.error(f"❌ Failed to store event '{ev.id}' in Qdrant")
-                continue  # Skip to next event if Qdrant storage fails
+            try:
+                # The upsert_event function is now async, so we can await it directly
+                if not await qdrant_logic.upsert_event(event_data):
+                    logger.error(f"Failed to persist event '{ev.id}' to Qdrant.")
+                    # Decide if you want to raise an exception or return an error response
+                else:
+                    logger.info(f"🗄️ Event '{ev.id}' persisted to Qdrant with vector embedding.")
+            except Exception as e:
+                logger.error(f"❌ Error persisting event {ev.id}: {e}")
+                # Continue with next event even if one fails
+                continue
                 
-            logger.info(f"🗄️ Event '{ev.id}' persisted to Qdrant with vector embedding.")
-
             # Publish to NATS for further processing
             raw = raw_event_pb2.RawEvent(
                 id=ev.id,

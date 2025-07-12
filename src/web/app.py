@@ -49,9 +49,15 @@ def make_request(method: str, endpoint: str, data=None):
 def render_ingest():
     st.header("Ingest Data")
     default = [
-        {"id":"evt-123","source":"manual","title":"Example","body":"...","published_at":"2025-07-10T10:00:00Z"}
+        {
+            "id": "evt-001",
+            "source": "TechCrunch",
+            "title": "Quantum Computing Breakthrough Achieved by Researchers at MIT",
+            "content": "A team of researchers at the Massachusetts Institute of Technology (MIT) has announced a significant breakthrough in the field of quantum computing. They have successfully developed a new type of qubit that is significantly more stable and less prone to decoherence than previous designs. This new development, published in the journal 'Nature Physics', could pave the way for the construction of large-scale, fault-tolerant quantum computers, potentially accelerating advancements in medicine, materials science, and artificial intelligence. The team's leader, Dr. Evelyn Reed, stated that this could reduce the error rates of quantum calculations by several orders of magnitude.",
+            "published_at": "2025-07-12T10:00:00Z"
+        }
     ]
-    payload_str = st.text_area("JSON Array of Events", json.dumps(default, indent=2), height=200)
+    payload_str = st.text_area("JSON Array of Events", json.dumps(default, indent=2), height=300)
     if st.button("Ingest Data"):
         try:
             events = json.loads(payload_str)

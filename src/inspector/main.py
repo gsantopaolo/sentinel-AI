@@ -165,7 +165,11 @@ async def filtered_event_handler(msg: Msg):
 
         if is_anomaly:
             event_data['is_anomaly'] = True
-            await qdrant_logic.upsert_event(event_data)
+            logger.info(f"🚩 Event '{filtered_event.id}' flagged as an anomaly. Updating in Qdrant.")
+            success = await qdrant_logic.upsert_event(event_data)
+            if not success:
+                logger.error(f"❌ Failed to update event '{filtered_event.id}' in Qdrant.")
+
             logger.info(f"🚩 Event '{filtered_event.id}' flagged as an anomaly in Qdrant.")
 
         await msg.ack()

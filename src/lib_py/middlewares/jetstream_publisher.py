@@ -60,7 +60,7 @@ class JetStreamPublisher:
 
             # Publish the message with the headers
             await self.js.publish(self.subject, message.SerializeToString(), headers=headers)
-            self.logger.info("✉️ Message published successfully!")
+            self.logger.info(f"✉️ Message {self.message_type} published successfully!")
         except NoRespondersError:
             self.logger.error("❌ No responders available for request")
         except TimeoutError:
