@@ -2,11 +2,26 @@ import asyncio
 import logging
 import os
 import threading
+from typing import Dict, Any, Optional, List
 import yaml
 from dotenv import load_dotenv
 from nats.aio.msg import Msg
 import openai
 import anthropic
+from datetime import datetime
+
+# Add type stubs for openai and anthropic if needed
+try:
+    from openai import OpenAI
+    openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+except ImportError:
+    openai_client = None
+
+try:
+    from anthropic import Anthropic
+    anthropic_client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+except ImportError:
+    anthropic_client = None
 
 from src.lib_py.middlewares.jetstream_event_subscriber import JetStreamEventSubscriber
 from src.lib_py.middlewares.readiness_probe import ReadinessProbe
@@ -53,27 +68,43 @@ class LLMClient:
         self.provider = provider
         self.model_name = model_name
         self.api_key = api_key
+        self.client = None
+        
+        if not self.api_key:
+            raise ValueError(f"API key is required for {provider}")
+            
         if self.provider == "openai":
-            openai.api_key = self.api_key
+            if openai_client is None:
+                raise ImportError("OpenAI client is not available. Install with: pip install openai")
+            self.client = openai_client
         elif self.provider == "anthropic":
-            self.client = anthropic.Anthropic(api_key=self.api_key)
+            if anthropic_client is None:
+                raise ImportError("Anthropic client is not available. Install with: pip install anthropic")
+            self.client = anthropic_client
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")
 
     async def get_completion(self, prompt: str) -> str:
-        if self.provider == "openai":
-            response = await openai.chat.completions.create(
-                model=self.model_name,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return response.choices[0].message.content
-        elif self.provider == "anthropic":
-            response = await self.client.messages.create(
-                model=self.model_name,
-                max_tokens=1024,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return response.content[0].text
+        try:
+            if self.provider == "openai":
+                response = await asyncio.to_thread(
+                    self.client.chat.completions.create,
+                    model=self.model_name,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                return response.choices[0].message.content
+            elif self.provider == "anthropic":
+                response = await asyncio.to_thread(
+                    self.client.messages.create,
+                    model=self.model_name,
+                    max_tokens=1024,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                return response.content[0].text
+        except Exception as e:
+            logger.error(f"Error getting completion from {self.provider}: {str(e)}")
+            raise
+            
         return ""
 
 async def check_for_anomalies(event_data: dict) -> bool:

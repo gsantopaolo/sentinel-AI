@@ -10,11 +10,20 @@ from nats.aio.msg import Msg
 from nats.js.errors import BadRequestError
 from nats.js.api import StreamConfig
 
-from lib_py.gen_types.rembg_data_pb2 import RembgData
-from lib_py.gen_types.sticky_detector_data_pb2 import StickyDetectorData
-from lib_py.middlewares.jetstream_event_subscriber import JetStreamEventSubscriber
-from lib_py.middlewares.readiness_probe import ReadinessProbe
-from lib_py.middlewares.jetstream_publisher import JetStreamPublisher
+from typing import Dict, Any, Optional, List, TypedDict
+import json
+from dataclasses import dataclass
+
+# Import from src.lib_py
+from src.lib_py.middlewares.jetstream_event_subscriber import JetStreamEventSubscriber
+from src.lib_py.middlewares.readiness_probe import ReadinessProbe
+from src.lib_py.middlewares.jetstream_publisher import JetStreamPublisher
+
+# Define type aliases for message handling
+class MessageHeaders(TypedDict, total=False):
+    """Type definition for message headers."""
+    message_type: str
+    # Add other expected headers here
 
 # You can import additional modules as needed
 # endregion
@@ -47,98 +56,137 @@ dlq_subject = os.getenv('NATS_CLIENT_DLQ_SUBJECT', '$JS.EVENT.ADVISORY.CONSUMER.
 
 # endregion
 
+@dataclass
+class MessageInfo:
+    data: bytes
+    subject: str
+    headers: dict
+
 # Define the event handler function for DLQ messages
-async def dlq_event_handler(msg: Msg):
-    start_time = time.time()  # Record the start time
+async def dlq_event_handler(msg: Msg) -> None:
+    """Handle dead letter queue advisory messages.
+    
+    Args:
+        msg: The message from the dead letter queue.
+    """
+    start_time = time.time()
+    logger.info("📥 Received a dead letter queue advisory message")
+    
     try:
-        logger.info("📥 Received a dead letter queue advisory message")
-
         # Parse the advisory message
-        advisory = json.loads(msg.data.decode())
-        stream = advisory['stream']
-        consumer = advisory['consumer']
-        stream_seq = advisory['stream_seq']
-        # delivery_seq = advisory['deliver_seq']
-
-        logger.info(
-            f"📄 advisory Details: stream={stream}, consumer={consumer}, stream_seq={stream_seq}")
-
-        # Retrieve the failed message from the original stream
-        js = msg._client.jetstream()
         try:
-            msg_info = await js.get_msg(stream, stream_seq)
-            failed_msg_data = msg_info.data
-            failed_msg_subject = msg_info.subject
-            # If the message has headers, you can access them as well
-            failed_msg_headers = msg_info.headers
-
-            logger.error(f"🚨 failed message from stream '{stream}' at sequence '{stream_seq}': {failed_msg_data}")
-
-            # Log the original message and its metadata
-            # logger.error(f"🚨 Original failed message from stream '{stream}' at sequence '{stream_seq}':")
-            # logger.error(f"Subject: {failed_msg_subject}")
-            # logger.error(f"Headers: {failed_msg_headers}")
-            # logger.error(f"Message: {failed_msg_data}")
-
-            # Assume the message type is stored in headers or payload
-            if "message-type" in failed_msg_headers:
-                message_type = failed_msg_headers["message-type"]
-            else:
-                # If there's no message type in headers, fallback to some other way
-                # Maybe a field in the message body or use a default
-                message_type = "RembgData"  # Default type or some identifier
-
-            # Deserialize based on the message type
-            # important every message sent from API or from anyone else
-            # shall contain the right message data
-            # this way they can be correctly deserialized
-            # see main.py in api ln 55 and 65 when JetStreamPublisher get instantiated
-
-            if message_type == "RembgData":
-                # Deserialize as RembgData
-                data = RembgData()
-                data.ParseFromString(failed_msg_data)
-                logger.info(f"🖼️ RembgData received: {data}")
-                # Process rembg_data here
-                # send a message to cb api that the operation has failed
-
-            elif message_type == "StickyDetectorData":
-                # Deserialize as StickyDetectorData
-                data = StickyDetectorData()
-                data.ParseFromString(failed_msg_data)
-                logger.info(f"🔍 StickyDetectorData received: {data}")
-                # Process rembg_data here
-                # send a message to cb api that the operation has failed
-
-            else:
-                logger.error(f"❓ Unknown message type: {message_type}")
-                # Handle unknown types
-
-
-            # Process the failed message as needed
-            # For example, you might log it, send an alert, or store it for later analysis
-
-            # Optionally, move the failed message to a separate queue, or in a database
-            # notify that this went wording to the request
-            logger.info(f"📤 failed message moved to....")
-
-            # Delete the message from the original stream to keep it clean
-            await js.delete_msg(stream, stream_seq)
-            logger.info(f"🗑️ deleted message with sequence {stream_seq} from stream '{stream}'")
-
-        except Exception as e:
-            logger.exception(f"❌ error retrieving or deleting failed message: {e}")
-
+            advisory = json.loads(msg.data.decode())
+            stream = advisory.get('stream')
+            consumer = advisory.get('consumer')
+            stream_seq = advisory.get('stream_seq')
+            
+            if not all([stream, consumer, stream_seq]):
+                raise ValueError("Missing required fields in advisory message")
+                
+        except (json.JSONDecodeError, KeyError, AttributeError) as e:
+            logger.error(f"❌ Failed to parse advisory message: {str(e)}")
+            await msg.ack_sync()
+            return
+            
+        logger.info(f"📄 Advisory Details - Stream: {stream}, Consumer: {consumer}, Sequence: {stream_seq}")
+        
+        # Process the failed message
+        js = msg._client.jetstream()
+        await _process_failed_message(js, stream, stream_seq)
+        
         # Acknowledge the advisory message
         await msg.ack_sync()
-        logger.info(f"👍 advisory message acknowledged successfully")
+        logger.info("👍 Advisory message acknowledged successfully")
+        
     except Exception as e:
-        error_message = str(e) if e else "Unknown error occurred"
-        logger.error(f"❌ failed to process DLQ advisory message: {error_message}")
+        logger.error(f"❌ Failed to process DLQ advisory message: {str(e)}", exc_info=True)
     finally:
-        end_time = time.time()  # Record the end time
-        elapsed_time = end_time - start_time
-        logger.info(f"⏰ total elapsed time for handling DLQ message: {elapsed_time:.2f} seconds")
+        elapsed_time = time.time() - start_time
+        logger.info(f"⏰ Total elapsed time for handling DLQ message: {elapsed_time:.2f} seconds")
+
+async def _process_failed_message(js, stream: str, stream_seq: int) -> None:
+    """Process a single failed message from the stream.
+    
+    Args:
+        js: JetStream context
+        stream: Name of the stream
+        stream_seq: Sequence number of the message
+    """
+    try:
+        # Get the failed message
+        msg_info = await js.get_msg(stream, stream_seq)
+        if not msg_info:
+            logger.error(f"❌ Failed to retrieve message {stream_seq} from stream '{stream}'")
+            return
+            
+        # Extract message details
+        message_info = MessageInfo(
+            data=msg_info.data,
+            subject=msg_info.subject,
+            headers=getattr(msg_info, 'headers', {}) or {}
+        )
+        
+        logger.error(f"🚨 Failed message from stream '{stream}' at sequence {stream_seq}")
+        
+        # Process based on message type
+        message_type = message_info.headers.get("message-type", "unknown").lower()
+        
+        try:
+            # Try to decode as JSON first
+            try:
+                message_data = json.loads(message_info.data.decode('utf-8'))
+                logger.info(f"📨 Processing JSON message of type: {message_type}")
+                logger.debug(f"Message data: {message_data}")
+                
+                # Here you can add specific processing based on message_type
+                # For example:
+                # if message_type == "some_type":
+                #     await _process_some_type(message_data)
+                # else:
+                #     logger.warning(f"No specific handler for message type: {message_type}")
+                
+            except json.JSONDecodeError:
+                # If not JSON, process as binary data
+                logger.info(f"📨 Processing binary message of type: {message_type} (size: {len(message_info.data)} bytes)")
+                # Here you can add binary data processing if needed
+                
+        except Exception as e:
+            logger.error(f"❌ Error processing message: {str(e)}", exc_info=True)
+            
+        # Clean up the failed message
+        await js.delete_msg(stream, stream_seq)
+        logger.info(f"🗑️ Deleted message with sequence {stream_seq} from stream '{stream}'")
+        
+    except Exception as e:
+        logger.error(f"❌ Error processing failed message: {str(e)}", exc_info=True)
+        raise
+
+async def _process_generic_message(data: bytes, message_type: str) -> None:
+    """Process a generic message.
+    
+    Args:
+        data: The message data (bytes)
+        message_type: Type of the message
+    """
+    try:
+        # Try to decode as JSON first
+        try:
+            message = json.loads(data.decode('utf-8'))
+            logger.info(f"📨 Processed {message_type} message: {json.dumps(message, indent=2)}")
+        except json.JSONDecodeError:
+            # If not JSON, log as binary data
+            logger.info(f"📨 Processed binary {message_type} message (size: {len(data)} bytes)")
+            
+        # Here you can add any generic message processing logic
+        # For example, you might want to:
+        # 1. Log the message
+        # 2. Send notifications
+        # 3. Store the message in a database
+        # 4. Forward to another service
+        
+    except Exception as e:
+        logger.error(f"❌ Error processing {message_type} message: {str(e)}", exc_info=True)
+        raise
 
 
 async def main():

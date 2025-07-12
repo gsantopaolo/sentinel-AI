@@ -16,6 +16,7 @@ from src.lib_py.middlewares.jetstream_publisher import JetStreamPublisher
 from src.lib_py.middlewares.readiness_probe import ReadinessProbe
 from src.lib_py.gen_types import raw_event_pb2, new_source_pb2, removed_source_pb2
 from src.lib_py.logic.source_logic import SourceLogic
+from src.lib_py.logic.qdrant_logic import QdrantLogic
 
 # ————— Environment & Logging —————
 load_dotenv()
@@ -61,6 +62,7 @@ NATS_OPTIONS = dict(
 raw_events_publisher: JetStreamPublisher
 new_source_publisher: JetStreamPublisher
 removed_source_publisher: JetStreamPublisher
+qdrant_logic: QdrantLogic
 
 @app.on_event("startup")
 async def startup_event():
@@ -70,6 +72,26 @@ async def startup_event():
     probe = ReadinessProbe(readiness_time_out=int(os.getenv("API_READINESS_TIME_OUT", 500)))
     threading.Thread(target=probe.start_server, daemon=True).start()
     logger.info("✅ Readiness probe started.")
+
+    # Initialize Qdrant Logic
+    global qdrant_logic
+    QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
+    QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
+    QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "news_events")
+    EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
+
+    qdrant_logic = QdrantLogic(
+        host=QDRANT_HOST,
+        port=QDRANT_PORT,
+        collection_name=QDRANT_COLLECTION_NAME,
+        embedding_model_name=EMBEDDING_MODEL_NAME
+    )
+    try:
+        qdrant_logic.ensure_collection_exists()
+        logger.info("✅ Qdrant collection ensured to exist.")
+    except Exception as e:
+        logger.error(f"❌ Failed to ensure Qdrant collection: {e}")
+        # Depending on criticality, you might want to raise the exception or handle it gracefully
 
     # JetStream publishers
     global raw_events_publisher, new_source_publisher, removed_source_publisher
@@ -154,19 +176,46 @@ class SourceRead(BaseModel):
 async def ingest_data(events: List[Event]):
     logger.info(f"📱 Received ingest batch of {len(events)} events")
     for ev in events:
-        raw = raw_event_pb2.RawEvent(
-            id=ev.id,
-            title=ev.title,
-            content=ev.body or "",
-            timestamp=ev.published_at.isoformat(),
-            source=ev.source,
-        )
         try:
-            await raw_events_publisher.publish(raw)
-            logger.info(f"✉️ Published raw event: {ev.id}")
+            # Prepare data for Qdrant - include all original fields
+            event_data = {
+                "id": ev.id,
+                "title": ev.title,
+                "content": ev.body or "",  # This is used for vector embedding
+                "source": ev.source,
+                "published_at": ev.published_at.isoformat(),
+                # Include any additional metadata from the original event
+                "original_data": ev.dict()  # Store complete original data
+            }
+            
+            # Store in Qdrant with vector embedding
+            if not await qdrant_logic.upsert_event(event_data):
+                logger.error(f"❌ Failed to store event '{ev.id}' in Qdrant")
+                continue  # Skip to next event if Qdrant storage fails
+                
+            logger.info(f"🗄️ Event '{ev.id}' persisted to Qdrant with vector embedding.")
+
+            # Publish to NATS for further processing
+            raw = raw_event_pb2.RawEvent(
+                id=ev.id,
+                title=ev.title,
+                content=ev.body or "",
+                timestamp=ev.published_at.isoformat(),
+                source=ev.source,
+            )
+            
+            try:
+                await raw_events_publisher.publish(raw)
+                logger.info(f"✉️ Published raw event: {ev.id}")
+            except Exception as e:
+                logger.error(f"❌ Publishing raw event {ev.id} failed: {e}")
+                # Continue with next event even if publishing fails
+                continue
+                
         except Exception as e:
-            logger.error(f"❌ Publishing raw event {ev.id} failed: {e}")
-            raise HTTPException(status_code=500, detail="Failed to publish raw event")
+            logger.error(f"❌ Error processing event {ev.id}: {e}")
+            # Continue with next event even if one fails
+            continue
     return {"message": "ACK"}
 
 # ————— Helper for Model Conversion —————
@@ -279,3 +328,11 @@ async def delete_source(source_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"❌ Publishing removed.source id={source_id} failed: {e}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+@app.get("/retrieve", status_code=status.HTTP_200_OK)
+async def retrieve_data(batch_id: str):
+    logger.info(f"📱 Received retrieve request for batch_id: {batch_id}")
+    event_data = await qdrant_logic.retrieve_event_by_id(batch_id)
+    if not event_data:
+        raise HTTPException(status_code=404, detail="Event not found in Qdrant")
+    return event_data
