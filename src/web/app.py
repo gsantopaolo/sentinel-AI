@@ -119,18 +119,29 @@ def render_sources():
     # Create new source record
     st.subheader("Create New Source")
     with st.form("create_source"):
-        source = st.text_input("Source Name (e.g. 'reddit')")
+        name = st.text_input("Source Name (e.g. 'reddit')")
         url = st.text_input("URL")
         title = st.text_input("Title")
         body = st.text_area("Body (optional)")
-        published_at = st.text_input("Published At (ISO-8601 UTC)")
+        from datetime import datetime
+        published_at = st.text_input("Published At (ISO-8601 UTC)", value=datetime.utcnow().isoformat() + "Z")
         if st.form_submit_button("Create"):
+            if not name:
+                st.error("Source Name cannot be empty.")
+                return
+            if not url:
+                st.error("URL cannot be empty.")
+                return
+            if not title:
+                st.error("Title cannot be empty.")
+                return
+
             payload = {
-                "source": source,
+                "name": name,
                 "url": url,
                 "title": title,
                 "body": body or None,
-                "published_at": published_at
+                "published_at": published_at # Send as string, let API parse
             }
             res = make_request("POST", "/sources", payload)
             if res: st.success("Source created!")
@@ -145,14 +156,14 @@ def render_sources():
             ids = [s["id"] for s in sources]
             sid = st.selectbox("Select Source ID", ids, key="up_id")
             src = next(s for s in sources if s["id"] == sid)
-            new_source = st.text_input("Source Name", value=src["source"])
+            new_name = st.text_input("Source Name", value=src["name"])
             new_url = st.text_input("URL", value=src["url"])
             new_title = st.text_input("Title", value=src["title"])
             new_body = st.text_area("Body (optional)", value=src.get("body", ""))
             new_published = st.text_input("Published At", value=src.get("published_at", ""))
             if st.button("Update"):
                 payload = {
-                    "source": new_source,
+                    "name": new_name,
                     "url": new_url,
                     "title": new_title,
                     "body": new_body or None,
@@ -177,14 +188,14 @@ def render_edit_source():
         return
     sid = st.selectbox("Select Source ID", [s["id"] for s in sources], key="edit_id")
     src = next(s for s in sources if s["id"] == sid)
-    source_val = st.text_input("Source Name", value=src["source"])
+    name_val = st.text_input("Source Name", value=src["name"])
     url_val = st.text_input("URL", value=src["url"])
     title_val = st.text_input("Title", value=src["title"])
     body_val = st.text_area("Body (optional)", value=src.get("body", ""))
     published_val = st.text_input("Published At", value=src.get("published_at", ""))
     if st.button("Save Changes"):
         payload = {
-            "source": source_val,
+            "name": name_val,
             "url": url_val,
             "title": title_val,
             "body": body_val or None,
