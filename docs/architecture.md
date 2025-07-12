@@ -51,7 +51,7 @@ flowchart LR
     %% Additional infra flows
     ranker -- "ranked.events" --> NATS
     ranker -- "upsert score" --> Qdrant
-    inspector -- "flag anomalies" --> Qdrant
+    inspector -- "flag anomalies / fake news" --> Qdrant
     DLQ -- "notifies" --> guardian
 
     %% API & UI interactions

@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This document provides a high-level overview of the Sentinel AI platform, mapping its core requirements to the specific microservices responsible for their implementation. Since a formal `specs.txt` file was not found, these requirements have been synthesized from the project's [architecture documentation](./architecture.md), service-specific markdown files, and source code.
+This document provides a high-level overview of the Sentinel AI platform, mapping its core requirements to the specific microservices responsible for their implementation. The requirements are derived from the official project specification (`samples/specs.txt`) and supplemented with details from the project's [architecture documentation](./architecture.md), service-specific markdown files, and source code.
 
 The platform is an [event-driven system](./architecture.md) composed of several microservices that communicate asynchronously via NATS JetStream. Each service has a distinct responsibility, working in concert to ingest, analyze, and present news data.
 
@@ -82,4 +82,3 @@ The platform is an [event-driven system](./architecture.md) composed of several 
 | Service | Responsibility | Implementation File(s) | Documentation |
 | :--- | :--- | :--- | :--- |
 | **All** | Each service implements a readiness probe that starts a `/healthz` endpoint. | `src/lib_py/middlewares/readiness_probe.py` | `docs/guardian.md` |
-| [**Inspector**](./inspector.md) | Implements a readiness probe to signal its health status. | `src/lib_py/middlewares/readiness_probe.py` | `docs/inspector.md` |

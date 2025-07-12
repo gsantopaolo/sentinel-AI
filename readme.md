@@ -1,17 +1,10 @@
-# sentinel-AI
-Wen I read the specs for this project, and one of the requirements was to make the application to work at scale 
-i suddenly told myself, to make it work at scale agents needs to become microservice able to work asynchronously whit an orchestrator logic, 
-spread over various microservices driven by a message bus to deliver asynchronous operations requests.
-In this scenario each agent has become a microservice with its own responsibility driven by an orchestrator, the scheduler.
-You can see the full list of microservice and their own responsibility on the [**service matrix**](docs/architecture.md#service-matrix):
-<br />
+# Sentinel-AI
+
+Sentinel-AI is an **event-driven**, **microservice** platform for real-time feed ingestion, filtering, ranking, and anomaly detection—designed to run on Kubernetes and scale to millions of users. 🚀🐳
+
+This project implements a scalable, real-time newsfeed platform that aggregates, filters, stores, and ranks IT-related event data from multiple sources. It is built with an asynchronous, microservice-based architecture, where each service has a distinct responsibility and communicates via a message bus.
+
 > 💡 **Tip:** If you are interested in a full agentic AI solution, please have a look at [Reforge-AI](https://github.com/gsantopaolo/reforge-ai)
-
-<br />
-Sentinel-AI is an **event-driven**, **microservice** platform for real-time feed ingestion, filtering, ranking, 
-and anomaly detection—designed to run on Kubernetes and scale to millions of users. 🚀🐳
-
-
 
 **Key Features:**
 
@@ -36,26 +29,7 @@ and anomaly detection—designed to run on Kubernetes and scale to millions of u
 - [**Ranker Service**](docs/ranker.md): Explains the configurable ranking algorithm that scores events based on importance and recency.
 - [**Inspector Service**](docs/inspector.md): Describes the service responsible for detecting and flagging anomalous or fake news events.
 - [**Guardian Service**](docs/guardian.md): Outlines the role of the system's monitoring and health-checking component.
-
-### Guardian
-
-The Guardian service acts as the central nervous system and watchdog for the entire Sentinel AI platform. Unlike other services that process event data, the Guardian's primary role is to ensure the reliability, stability, and security of the system as a whole.
-
-Its key responsibilities include:
-- **Dead-Letter Queue (DLQ) Monitoring**: It subscribes to all DLQ subjects (`dlq.>`) across NATS. When a message fails processing in any service after multiple retries, it lands in the DLQ and is immediately intercepted by the Guardian.
-- **Pluggable Alerting**: Upon receiving a failed message, the Guardian uses a configurable set of alerters (e.g., logging, Slack, email) to notify administrators with detailed information about the failure, including the original message, the service that failed, and the reason for the failure.
-
-This provides centralized, real-time insight into message processing failures anywhere in the system, enabling rapid diagnosis and resolution.
-
----
-
-## Known Issues and Future Improvements
-
-- **Qdrant Update Race Condition**:
-  - **ranker service**: The service currently uses a `retrieve-then-update` pattern to add scores to event records in Qdrant. This could create a race condition if another service modifies the same record concurrently, potentially leading to data loss. A more robust solution would be to use a partial update (`set_payload`) operation.
-  - **inspector service**: Shares the same potential race condition as the `ranker` service. The recommendation is the same: modify `QdrantLogic` to use a `set_payload` operation for atomic field updates.
-- **Externalize NATS Retry Policy**:
-  - The message redelivery attempt count (`max_deliver`) is currently hardcoded to `3` in the subscriber services (`filter`, `ranker`, `inspector`). This should be moved to a `.env` variable (e.g., `NATS_MAX_DELIVER_COUNT`) to allow for easier configuration without code changes.
+- [**Web Service**](docs/web.md): Describes the interactive web UI for managing and visualizing platform data.
 
 ---
 
@@ -65,45 +39,32 @@ This provides centralized, real-time insight into message processing failures an
 
 ---
 
-## ⚠️ Known Issues & Troubleshooting
+## ⚠️ Known Issues and Future Improvements
 
-> *To be completed: common pitfalls, configuration tips, logging and metrics guidance.*
-- When the cluster starts and you use the Web UI before all services are ready, the UI will show an error message.
-make sure all services are started through the Portainer UI 
-- Filter service: There is a potential race condition in the logic that could cause issues under specific circumstances.
-The ranker service retrieves an event from Qdrant, modifies it in memory, and then writes it back. If another service (like the inspector) were to perform the same retrieve-then-update operation on the exact same event at the exact same time, one of the updates could be overwritten and lost. For example:
-  - Ranker retrieves event E.
-  - Inspector retrieves event E.
-  - Ranker adds its scores to E and writes it back to Qdrant.
-  - Inspector adds its analysis to its copy of E (which does not have the ranker's scores) and writes it back to Qdrant.
-Result: The ranker's scores are lost.
-Recommendation: While this is a low-probability event in the current architecture, the best practice to prevent this is to use Qdrant's set_payload operation instead of a full 
-upsert. The set_payload method allows us to update specific fields of a point without overwriting the entire record.
-Suggested improvement to prevent the issue described above:
-  - Modify the QdrantLogic class to support set_payload and updating the ranker to use it. This would make the service more resilient and align it with best practices for concurrent data modification.
+- **Qdrant Update Race Condition**:
+  - Both the `ranker` and `inspector` services use a `retrieve-then-update` pattern to modify event records in Qdrant. This can create a race condition where concurrent updates might overwrite each other, leading to data loss.
+  - **Recommendation**: Modify the `QdrantLogic` class to support the `set_payload` operation, which allows for atomic, partial updates to a record without overwriting the entire object.
 
+- **Externalize NATS Retry Policy**:
+  - The message redelivery attempt count (`max_deliver`) is currently hardcoded to `3` in the subscriber services (`filter`, `ranker`, `inspector`).
+  - **Recommendation**: This should be moved to a `.env` variable (e.g., `NATS_MAX_DELIVER_COUNT`) to allow for easier configuration without code changes.
 
-- inspector service:Potential Issue (Same as ranker): The inspector service shares the same potential race condition as the ranker service. It uses a retrieve-then-update pattern with a full 
-upsert. This means if the inspector and ranker process the same event at the same time, one service's update could overwrite and erase the other's. As before, this is a low-risk issue for a proof-of-concept, but for a production system, the recommendation would be to modify 
-QdrantLogic to use a set_payload operation, which updates only specific fields without overwriting the entire record.
+- **Service Startup Dependencies**:
+  - When the cluster starts, the Web UI may become available before all backend services are ready, leading to initial errors.
+  - **Recommendation**: Implement health checks or dependencies in the Docker Compose configuration to ensure a graceful startup sequence.
 
-
-
-
+- **Readiness Probes**:
+  - The readiness probes for the `inspector` and `web` services are not fully functional and need to be corrected.
 
 ---
 
 ## 🚧 Next Steps
 
+- **Scheduler Scalability**: Replace the current `APScheduler` implementation with a more distributed and scalable solution suitable for a multi-node environment.
+- **Authentication**: Implement `Authentik` to add user access control and integrate with existing organizational credentials.
+- **Helm Chart**: Create a Helm chart for streamlined deployment to a Kubernetes cluster.
+- **Improved Web UI**: Enhance the user interface with more advanced features and a more polished design.
 
-> *To be completed: bonus features, advanced filtering modules, extended monitoring strategies.*
-- Scheduler: for full scalability change APScheduler
-- Improved web UI
-- Implemet dependecies in the Docker Compose so that the container will start correctly and we will avoid any error in the Web UI when the web container starts faster than others and the user will get errors because other containers are still starting 
-- Readiness probe for inspector and web are not working
-- portainer and authentik needs to be enabled
-- Implement Authentik to add user access with existing organization's credentials 
-- Creat the HELM chart to deploy the cluster on K8s
 ---
 
 > check out [my blog](https://genmind.ch)

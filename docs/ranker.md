@@ -96,7 +96,7 @@ sequenceDiagram
     Qdrant-->>Ranker: Acknowledge upsert
     Ranker->>Ranker: Construct RankedEvent Protobuf
     Ranker->>NATS: Publish ranked.events (RankedEvent Protobuf)
-    NATS-->>Ranker: Acknowledge filtered.events message
+    Ranker->>NATS: Acknowledge filtered.events message
 ```
 
 ### Internal Logic Flow

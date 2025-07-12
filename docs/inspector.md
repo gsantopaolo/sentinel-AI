@@ -96,15 +96,13 @@ sequenceDiagram
         LLM-->>Inspector: Anomaly Analysis Response (ANOMALY/NORMAL)
         alt LLM Detects Anomaly
             Inspector->>Inspector: Set is_anomaly flag to True
-        else LLM Does Not Detect Anomaly
-            Inspector->>Inspector: is_anomaly remains False
         end
     end
     alt is_anomaly is True
         Inspector->>Qdrant: Upsert event payload with is_anomaly flag
         Qdrant-->>Inspector: Acknowledge upsert
     end
-    NATS-->>Inspector: Acknowledge filtered.events message
+    Inspector->>NATS: Acknowledge filtered.events message
 ```
 
 ### Internal Logic Flow
@@ -120,9 +118,9 @@ flowchart TD
     D -->|No Anomaly| F{"Check for Anomalies (LLM-based, if configured)"}
     F -->|LLM Detects Anomaly| E
     F -->|LLM Does Not Detect Anomaly| G["is_anomaly remains False"]
-    E --> H["Upsert Event to Qdrant (if is_anomaly is True)"]
-    G --> H
-    H --> I["Acknowledge filtered.events message"]
+    E --> H["Upsert Event to Qdrant"]
+    G --> I["Acknowledge filtered.events message"]
+    H --> I
     I --> J["End"]
 ```
 

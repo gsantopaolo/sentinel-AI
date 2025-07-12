@@ -2,7 +2,7 @@
 
 ## Overview
 
-The [`scheduler` service](./scheduler.md) is responsible for managing the polling schedules of various data sources within the Sentinel AI platform. Its primary role is to react to changes in source configurations (newly added or removed sources) and, in the future, to periodically emit `poll.source` events to trigger data collection by the [`connector` service](./connector.md).
+The `scheduler` service is responsible for managing the polling schedules of various data sources within the Sentinel AI platform. Its primary role is to react to changes in source configurations (newly added or removed sources) and, in the future, to periodically emit `poll.source` events to trigger data collection by the [`connector` service](./connector.md).
 
 Its core responsibilities include:
 1.  **Subscribe** to `new.source` events, indicating a new data source has been added.
@@ -12,31 +12,31 @@ Its core responsibilities include:
 
 ## Core Functionality
 
-The [`scheduler` service](./scheduler.md) is an event-driven component that reacts to administrative changes in data sources. While its core scheduling logic (using APScheduler) is currently a placeholder, its event subscription mechanism is fully functional.
+The `scheduler` service is an event-driven component that reacts to administrative changes in data sources. While its core scheduling logic (using APScheduler) is currently a placeholder, its event subscription mechanism is fully functional.
 
 ### 1. Reacting to New Sources (`new.source`)
 
-When a `new.source` event is received, the [`scheduler`](./scheduler.md) acknowledges the message. In a future iteration, this would trigger the creation of a new polling job within APScheduler, configured to periodically fetch data from the newly added source.
+When a `new.source` event is received, the `scheduler` acknowledges the message. In a future iteration, this would trigger the creation of a new polling job within APScheduler, configured to periodically fetch data from the newly added source.
 
 ### 2. Reacting to Removed Sources (`removed.source`)
 
-Similarly, upon receiving a `removed.source` event, the [`scheduler`](./scheduler.md) acknowledges the message. The future implementation would involve identifying and removing the corresponding polling job from APScheduler, ensuring that data collection for the removed source ceases.
+Similarly, upon receiving a `removed.source` event, the `scheduler` acknowledges the message. The future implementation would involve identifying and removing the corresponding polling job from APScheduler, ensuring that data collection for the removed source ceases.
 
 ### 3. Emitting Poll Events (`poll.source`)
 
-(Future Implementation) The [`scheduler`](./scheduler.md) will periodically publish `poll.source` events to a NATS stream. Each `poll.source` event will contain information about a specific data source, prompting the [`connector` service](./connector.md) to fetch data from that source.
+(Future Implementation) The `scheduler` will periodically publish `poll.source` events to a NATS stream. Each `poll.source` event will contain information about a specific data source, prompting the [`connector` service](./connector.md) to fetch data from that source.
 
 ## Why YAML Configuration?
 
-The [`scheduler` service](./scheduler.md) does not currently utilize a YAML configuration file for its core logic. Its behavior is primarily driven by the NATS events it subscribes to and its internal scheduling mechanism (APScheduler). However, if complex scheduling rules or source-specific polling parameters were to be introduced, a YAML configuration would be highly beneficial for externalizing these settings, similar to how [`filter`](./filter.md) and [`ranker`](./ranker.md) services manage their configurable aspects.
+The `scheduler` service does not currently utilize a YAML configuration file for its core logic. Its behavior is primarily driven by the NATS events it subscribes to and its internal scheduling mechanism (APScheduler). However, if complex scheduling rules or source-specific polling parameters were to be introduced, a YAML configuration would be highly beneficial for externalizing these settings, similar to how [`filter`](./filter.md) and [`ranker`](./ranker.md) services manage their configurable aspects.
 
 ## Technical Deep Dive
 
-The [`scheduler` service](./scheduler.md) is implemented in Python, leveraging `asyncio` for asynchronous operations and NATS JetStream for reliable messaging. It uses `APScheduler` for managing scheduled tasks.
+The `scheduler` service is implemented in Python, leveraging `asyncio` for asynchronous operations and NATS JetStream for reliable messaging. It uses `APScheduler` for managing scheduled tasks.
 
 ### Data Flow and Processing Sequence
 
-The following sequence diagram illustrates how the [`scheduler` service](./scheduler.md) reacts to source management events:
+The following sequence diagram illustrates how the `scheduler` service reacts to source management events:
 
 ```mermaid
 sequenceDiagram
@@ -62,13 +62,13 @@ sequenceDiagram
 
 ### Internal Logic Flow
 
-The internal processing within the [`scheduler` service](./scheduler.md) for a new source event:
+The internal processing within the `scheduler` service for a new source event:
 
 ```mermaid
 flowchart TD
     A["Start: Receive new.source message"] --> B{"Parse NewSource Protobuf"}
     B --> C["Extract Source Details"]
-    C --> D["Log: ✉️ Received new source event"]
+    C --> D["Log: Received new source event"]
     D --> E["Acknowledge new.source message"]
     E --> F["End"]
 ```
@@ -83,4 +83,4 @@ flowchart TD
 *   **`src/lib_py/middlewares/ReadinessProbe`**: Ensures the service's health can be monitored.
 *   **`python-dotenv`**: For loading environment variables from `.env` files.
 
-This overview provides a clear understanding of the [`scheduler` service](./scheduler.md)'s role, its current workings, and its future potential within the Sentinel AI platform.
+This overview provides a clear understanding of the `scheduler` service's role, its current workings, and its future potential within the Sentinel AI platform.
