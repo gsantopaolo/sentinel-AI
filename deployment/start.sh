@@ -3,16 +3,27 @@
 # Exit immediately if a command exits with a non-zero status.
 set -euo pipefail
 
-# Source the .env file
-if [ -f "deployment/.env" ]; then
+# Detect the absolute path of the directory this script resides in
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source the .env file (expected alongside this script)
+if [ -f "$SCRIPT_DIR/.env" ]; then
   echo "Sourcing .env file..."
-  source deployment/.env
+  source "$SCRIPT_DIR/.env"
 else
   echo ".env file not found. Please create one based on .env.example. Exiting."
   exit 1
 fi
 
+# Resolve DATA_PATH relative to deployment directory if given as a relative path
+if [[ "${DATA_PATH}" != /* ]]; then
+  DATA_DIR="$SCRIPT_DIR/${DATA_PATH%/}"
+else
+  DATA_DIR="${DATA_PATH%/}"
+fi
 
+# Ensure DATA_PATH seen by docker compose is absolute (required for bind mounts in driver_opts)
+export DATA_PATH="$DATA_DIR"
 
 # Function to ensure directory exists and has correct permissions
 ensure_dir() {
@@ -27,11 +38,15 @@ ensure_dir() {
 }
 
 # Ensure data directories exist
-ensure_dir "${DATA_PATH}/nats"
-ensure_dir "${DATA_PATH}/qdrant"
-ensure_dir "${DATA_PATH}/postgres"
-ensure_dir "${DATA_PATH}/portainer"
-ensure_dir "${DATA_PATH}/traefik-certs"
+ensure_dir "${DATA_DIR}/nats"
+ensure_dir "${DATA_DIR}/qdrant"
+ensure_dir "${DATA_DIR}/postgres"
+ensure_dir "${DATA_DIR}/portainer"
+ensure_dir "${DATA_DIR}/traefik-certs"
+
+# Set permissive permissions so Docker containers can write to host-mounted volumes
+echo "Setting write permissions on data directory tree (${DATA_DIR})"
+chmod -R a+rwx "${DATA_DIR}"
 
 # Ensure Docker networks exist, if not, create them as external
 check_and_create_network() {
@@ -52,15 +67,15 @@ check_and_create_network "sentinel-backend-network"
 # Portainer
 docker compose \
   -p sentinel-infra \
-  --env-file deployment/.env \
-  -f deployment/docker-compose.infra.yml \
+  --env-file "$SCRIPT_DIR/.env" \
+  -f "$SCRIPT_DIR/docker-compose.infra.yml" \
   up -d "$@"
 
 # Combined Base services (NATS, Qdrant, Postgres) and Sentinel AI microservices (including web)
 docker compose \
   -p sentinel-services \
-  --env-file deployment/.env \
-  -f deployment/docker-compose.services.yml \
+  --env-file "$SCRIPT_DIR/.env" \
+  -f "$SCRIPT_DIR/docker-compose.services.yml" \
   up -d "$@"
 
 echo " "
@@ -80,5 +95,3 @@ echo "  🐘  Postgres Dashboard          http://localhost:16543"
 echo "  ✉️  NATS Dashboard              http://localhost:8502"
 echo "   "
 echo " "
-
-
