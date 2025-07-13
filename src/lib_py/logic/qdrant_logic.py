@@ -168,6 +168,33 @@ class QdrantLogic:
             self.logger.error(f"❌ Failed to list ranked events: {e}", exc_info=True)
             raise RuntimeError("Failed to list ranked events") from e
 
+    async def list_all_events(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """List the most recent events irrespective of ranking status."""
+        self.logger.info(f"📋 Listing all events (limit={limit})")
+        try:
+            loop = asyncio.get_running_loop()
+            records, _ = await loop.run_in_executor(
+                None,
+                lambda: self.client.scroll(
+                    collection_name=self.collection_name,
+                    limit=limit,
+                    with_payload=True
+                )
+            )
+            payloads = [r.payload for r in records]
+            # Sort by timestamp descending if present
+            def _ts(p):
+                t = p.get("timestamp")
+                if isinstance(t, (int, float)):
+                    return t
+                return 0
+            payloads.sort(key=_ts, reverse=True)
+            self.logger.info(f"✅ Found {len(payloads)} total events.")
+            return payloads
+        except Exception as e:
+            self.logger.error(f"❌ Failed to list all events: {e}", exc_info=True)
+            raise RuntimeError("Failed to list all events") from e
+
     async def search_events_by_keyword(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Search for events using a full-text search on the 'content' field."""
         self.logger.info(f"🔍 Keyword search for: '{query}'")

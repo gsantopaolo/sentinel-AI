@@ -334,6 +334,17 @@ async def delete_source(source_id: int, db: Session = Depends(get_db)):
 
 # ————— News Retrieval Endpoints —————
 
+@app.get("/news", response_model=List[EventPayload], tags=["News"])
+async def get_all_news(limit: int = 20):
+    """Retrieve the most recent news events regardless of ranking status."""
+    logger.info(f"📱 GET /news (limit={limit})")
+    try:
+        events = await qdrant_logic.list_all_events(limit=limit)
+        return events
+    except Exception as e:
+        logger.error(f"❌ Error retrieving all news from Qdrant: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error while fetching news.")
+
 @app.get("/news/ranked", response_model=List[EventPayload], tags=["News"])
 async def get_ranked_news(limit: int = 20):
     """

@@ -109,15 +109,24 @@ def render_news(endpoint: str, title: str):
 
 def render_rerank():
     st.header("Rerank News")
-    default = {"strategy":"custom","parameters":{"importance_weight":0.7,"recency_weight":0.3}}
-    payload_str = st.text_area("Rerank Payload", json.dumps(default, indent=2), height=150)
+    query = st.text_input("Keyword / Query", placeholder="e.g. cybersecurity")
+    limit = st.number_input("Results Limit", min_value=1, max_value=100, value=10, step=1)
+
     if st.button("Rerank News"):
-        try:
-            payload = json.loads(payload_str)
-            r = make_request("POST", "/news/rerank", payload)
-            if r: st.success(r.json().get("message", "Reranked"))
-        except json.JSONDecodeError:
-            st.error("Invalid JSON payload.")
+        if not query:
+            st.warning("Please enter a query string.")
+            return
+        payload = {"query": query, "limit": int(limit)}
+        r = make_request("POST", "/news/rerank", payload)
+        if r and r.status_code == 200:
+            data = r.json()
+            if data:
+                st.success(f"Returned {len(data)} events")
+                st.dataframe(pd.DataFrame(data))
+            else:
+                st.info("No events matched the query.")
+        else:
+            st.error("Failed to rerank news")
 
 
 def render_sources():

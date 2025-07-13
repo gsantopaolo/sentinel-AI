@@ -4,6 +4,9 @@
 
 The `web` service provides an interactive, user-friendly interface for the Sentinel AI platform. Built with Streamlit, it allows users to manage data sources, ingest new events, view filtered and ranked news feeds, and interact with the system's core functionalities without directly using the API.
 
+> ⚠️ **Warning:** Somtimes the `web` service may not start correctly. Restart from Portainer.
+
+
 Its primary features include:
 1.  **Source Management**: A dedicated page to view, add, and remove data sources.
 2.  **Data Ingestion**: A simple form to manually push new events into the system.
@@ -30,7 +33,7 @@ The UI provides several views for monitoring events:
 *   **Ranked News**: Presents events with their calculated importance, recency, and final scores from the `ranker` service. **Note:** this view will only populate when the Ranker service is running and has processed events. If the Ranker is stopped, this table remains empty until it is restarted and new events flow through.
 
 ### 4. Interactive Reranking
-The **Rerank News** page allows users to dynamically adjust the weights for importance and recency and immediately see the impact on the event rankings. This is useful for tuning the ranking algorithm.
+The **Rerank News** page lets you enter a free-text query (e.g., “cybersecurity”) and choose how many results to return. The API reorders events by semantic similarity to your query, enabling ad-hoc exploration of the news feed.
 
 ## Technical Deep Dive
 
