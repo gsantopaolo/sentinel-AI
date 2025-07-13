@@ -2,7 +2,7 @@
 
 When I first read the requirements, it became clear that **scalability** was paramount. Accordingly, I implemented Sentinel-AI as a proof of concept designed to run on Kubernetes and scale seamlessly to millions of users. With the right production-level enhancements—such as optimized provisioning, autoscaling policies, and resilient networking—this prototype can be deployed in a very short timeframe and handle heavy loads at production scale.
 
-Although this initial version is not fully agentic, it already leverages embeddings and a large language model (LLM) and can be easily connected to a private inference server (currently supporting SaaS providers like OpenAI and Anthropic). For an overview of how to integrate a high-throughput, private inference cluster at scale, see the [CogniX architecture](https://github.com/gsantopaolo/CogniX).
+Although this initial version is not fully agentic, it already leverages embeddings and a large language model (LLM) and can be easily connected to a private inference server (currently supporting SaaS providers like OpenAI and Anthropic). For an overview of how to integrate a high-throughput, private inference cluster at scale, see the [CogniX architecture](https://github.com/gen-mind/cognix/tree/main/docs#architecture).
 
 Sentinel-AI is an **event-driven**, **microservice** platform for real-time feed ingestion, filtering, ranking, and anomaly detection—designed to run on Kubernetes and scale to millions of users. 🚀🐳
 
