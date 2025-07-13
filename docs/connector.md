@@ -15,17 +15,25 @@ Its core responsibilities include:
 The connector service is an event-driven component that reacts to polling requests from the [`scheduler` service](./scheduler.md).  
 In the current **proof-of-concept** it uses Playwright + headless Chromium to fetch the landing page URL (`config.url`) and extracts `<a>` links as candidate news items. A lightweight Postgres table (`processed_items`) is used to avoid re-publishing the same link twice.
 
-> ⚠️ **Not production-ready** – the scraper is intentionally naïve: no pagination, no JS login, no cookie handling, no rate-limiting, and it relies on simple heuristics (`len(text) > 25`, link starts with `http`). It is good enough to demonstrate the end-to-end pipeline but will need hardening for real-world news sites.
+> ⚠️ **Not production-ready** – the scraper is intentionally naïve: no pagination, no JS login, no cookie handling, no rate-limiting, and it relies on simple heuristics (`len(text) > 5`, link starts with `http`). It is good enough to demonstrate the end-to-end pipeline but will need hardening for real-world news sites.
 
-### Why the Reddit *r/cybersecurity* page yields zero links
+### July 2025 improvements
 
-Reddit post titles are typically short (“New Fortinet CVE” ≈ 20 chars).  Because the current filter keeps only anchors whose **visible text length is > 25 characters**, every Reddit anchor is discarded, so `_scrape_links()` returns an empty list.
+* **Headline selector expanded** – default CSS selector is now `h1 a, h2 a, h3 a, h4 a, article a`.
+* **Text length threshold lowered** from 25 → 5 characters.
+* **Configurable selector** – you may override the selector per‐source by adding a `"selector"` key to `PollSource.config_json`.
+* **Fallback pass** – if the headline selector yields zero links, the scraper scans *all* anchors with text/title ≥ 15 chars.
+* **Corrected deduplication logic** – new links are collected first, written to `processed_items`, then published so scraped count now matches published count.
 
-To ingest Reddit you can either lower the threshold (e.g. `> 5`) or implement a CSS-selector rule that targets the `<h3>` post-title anchors.
+### Why the Reddit *r/cybersecurity* page may still yield zero links
+
+Reddit post titles are typically short (“New Fortinet CVE” ≈ 20 chars).  Because the current filter keeps only anchors whose **visible text length is > 5 characters**, every Reddit anchor is discarded, so `_scrape_links()` returns an empty list.
+
+To ingest Reddit you can either lower the threshold (e.g. `> 1`) or implement a CSS-selector rule that targets the `<h3>` post-title anchors.
 
 ### Suggested starter sources that fit the current heuristic
 
-The following public pages have headline anchors well above 25 characters and work out-of-the-box:
+The following public pages have headline anchors well above 5 characters and work out-of-the-box:
 
 | Source | URL to use in `config.url` |
 |--------|----------------------------|
@@ -42,9 +50,9 @@ When a `poll.source` event is received, the connector acknowledges the message. 
 ### 2. Scraping with Playwright (Current Logic)
 
 1. Opens the URL in headless Chromium (timeout 15 s).  
-2. Collects all anchors with an `href` attribute.  
-3. Filters out short labels and non-http links.  
-4. For each new link, stores a `(source_id, url)` row in `processed_items` and publishes a minimal `RawEvent` (title, timestamp, source).
+2. Selects anchors matching `selector` (default `h1–h4 a, article a`, or the per-source override).  
+3. Keeps those with visible text ≥ 5 characters and scheme `http*`. If none found a **fallback scan** over all anchors with text/title ≥ 15 characters is attempted.  
+4. Builds `new_links` by deduplicating against the `processed_items` table, inserts markers in one batch, then publishes a `RawEvent` for each new link.
 
 If Playwright fails to load the page (network error, 4xx, etc.) the connector logs the error and NAKs the message so JetStream can redeliver.
 

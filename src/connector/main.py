@@ -77,21 +77,45 @@ if engine:
 
 PAGE_TIMEOUT = 15000  # ms
 
-async def _scrape_links(url: str) -> List[tuple[str, str]]:
-    """Return list of (title, href) tuples from first page using Playwright only."""
+async def _scrape_links(url: str, selector_override: Optional[str] = None) -> List[tuple[str, str]]:
+    """Return list of (title, href) tuples from first page using Playwright.
+
+    If *selector_override* is provided, it is used verbatim; otherwise the
+    generic selector "h1 a, h2 a, h3 a, h4 a, article a" is applied.  Anchors are
+    then filtered to have text length > 5 characters.
+    """
     links: List[tuple[str, str]] = []
+    selector = selector_override or "h1 a, h2 a, h3 a, h4 a, article a"
+
     logger.info("🕸️  Launch headless browser for %s", url)
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         await page.goto(url, timeout=PAGE_TIMEOUT)
         logger.info("📄  Page loaded, querying anchor tags…")
-        anchors = await page.query_selector_all("a[href]")
+
+        anchors = await page.query_selector_all(selector)
         for a in anchors:
             href = await a.get_attribute("href")
-            text = (await a.inner_text()).strip()
-            if href and text and len(text) > 25 and href.startswith("http"):
+            raw_text = await a.inner_text()
+            # Some sites wrap the real text in child spans, fallback to first child
+            if (not raw_text) and (child := await a.query_selector("*")):
+                raw_text = await child.inner_text()
+            text = (raw_text or "").strip()
+
+            if href and text and len(text) > 5 and href.startswith("http"):
                 links.append((text, href))
+
+        # Fallback: if no links found, try a broad search with same length filter
+        if not links:
+            logger.info("ℹ️  No links with selector '%s'. Falling back to all anchors.", selector)
+            anchors = await page.query_selector_all("a[href]")
+            for a in anchors:
+                href = await a.get_attribute("href")
+                text = ((await a.get_attribute("title")) or (await a.inner_text()) or "").strip()
+                if href and text and len(text) > 15 and href.startswith("http"):
+                    links.append((text, href))
+
         await browser.close()
     return links
 
@@ -117,7 +141,14 @@ async def poll_source_event_handler(msg: Msg):
             await msg.ack()
             return
 
-        links = await _scrape_links(src_url)
+        selector_override: Optional[str] = None
+        try:
+            cfg = json.loads(poll_source.config_json)
+            selector_override = cfg.get("selector")
+        except Exception:
+            pass
+
+        links = await _scrape_links(src_url, selector_override)
         logger.info("🔍 Scraped %s candidate links from %s", len(links), src_url)
 
         if not (raw_events_publisher and SessionFactory):
@@ -127,16 +158,18 @@ async def poll_source_event_handler(msg: Msg):
 
         new_count = 0
         with SessionFactory() as db:
+            new_links: List[tuple[str, str]] = []
             for title, href in links:
                 exists = db.query(ProcessedItem).filter_by(source_id=poll_source.id, item_url=href).first()
                 if exists:
                     continue
-                # Insert processed marker
+                new_links.append((title, href))
                 db.add(ProcessedItem(source_id=poll_source.id, item_url=href))
+
             # commit once after batch insert
             db.commit()
 
-            for title, href in [l for l in links if not db.query(ProcessedItem).filter_by(source_id=poll_source.id, item_url=l[1]).first()]:
+            for title, href in new_links:
                 event = raw_event_pb2.RawEvent(
                     id=str(uuid.uuid4()),
                     title=title[:200],
