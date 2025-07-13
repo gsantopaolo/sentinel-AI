@@ -6,6 +6,8 @@ Although this initial version is not fully agentic, it already leverages embeddi
 see the [CogniX architecture](https://github.com/gen-mind/cognix/tree/main/docs#architecture).
 <br />
 At the moment, the app is not agentic, but converting the AI-powered components into fully agentic systems is straightforward—see the pseudocode in [src/agentic](https://github.com/gen-mind/sentinel-ai/tree/main/src/agentic) for details.
+The base idea is that, if needed, every microservice can be easily ocnverted into an agentic service and the pseudo code in [src/agentic](https://github.com/gen-mind/sentinel-ai/tree/main/src/agentic) is a good starting point.
+<br /> 
 Sentinel-AI is an **event-driven**, **microservice** platform for real-time feed ingestion, filtering, ranking, and anomaly detection—designed to run on Kubernetes and scale to millions of users. 🚀🐳
 
 This project implements a scalable, real-time newsfeed platform that aggregates, filters, stores, and ranks IT-related event data from multiple sources. It is built with an asynchronous, microservice-based architecture, where each service has a distinct responsibility and communicates via a message bus.
