@@ -91,6 +91,16 @@ class QdrantLogic:
             self.logger.error(f"❌ Failed to initialize collection: {e}", exc_info=True)
             raise
 
+    def ensure_collection_exists(self) -> None:
+        """Legacy alias for `initialize_collection` retained for backward-compatibility.
+
+        Several micro-services (e.g. `filter`, `inspector`) still invoke
+        `ensure_collection_exists()` on startup.  The underlying logic was
+        renamed to `initialize_collection`, so this thin wrapper simply
+        forwards the call, avoiding AttributeError and service restarts.
+        """
+        self.initialize_collection()
+
     async def list_filtered_events(self) -> List[Dict[str, Any]]:
         """List ALL events that are marked as relevant but not yet ranked."""
         self.logger.info("📋 Listing all filtered events with full pagination.")
@@ -292,39 +302,87 @@ class QdrantLogic:
             raise RuntimeError(error_msg) from e
 
     async def upsert_event(self, event_data: Dict[str, Any]) -> bool:
-        """Upsert an event into the Qdrant collection."""
-        event_id = event_data.get('id', 'N/A')
-        self.logger.info(f"📥 Received upsert event: {event_id} (store entity inside the vector db)")
+        """Upsert or partially update an event.
 
-        if not event_id or event_id == 'N/A' or "content" not in event_data:
-            self.logger.error("❌ Event data must contain a valid 'id' and 'content' field")
+        Behaviour:
+        1. If *content* is present ⇒ full upsert with vector (embedding generated).
+        2. If *content* missing  ⇒ assume only payload fields must be patched; we
+           call Qdrant `set_payload` for the existing point.  No vector is
+           created, so the record *must* already exist.
+        """
+        event_id = event_data.get('id', 'N/A')
+        self.logger.info("📥 Received upsert event: %s", event_id)
+
+        if not event_id or event_id == 'N/A':
+            self.logger.error("❌ Event data must contain a valid 'id'")
             return False
 
         try:
             loop = asyncio.get_running_loop()
-            content = event_data["content"]
-            embedding = await loop.run_in_executor(None, lambda: self.model.encode(content).tolist())
-
             point_id = self._hash_id(str(event_id))
+
+            # Full insert/update when we have content
+            if 'content' in event_data and event_data['content']:
+                content = event_data['content']
+                embedding = await loop.run_in_executor(None, lambda: self.model.encode(content).tolist())
+                point = models.PointStruct(
+                    id=point_id,
+                    vector=embedding,
+                    payload={**event_data, "original_id": str(event_id)},
+                )
+                await loop.run_in_executor(
+                    None,
+                    lambda: self.client.upsert(
+                        collection_name=self.collection_name, points=[point], wait=True
+                    ),
+                )
+                self.logger.info("✅ Vector+payload upserted for event %s", event_id)
+                return True
+
+            # --- Payload-only patch (no vector) ---
+            try:
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: self.client.set_payload(
+                        collection_name=self.collection_name,
+                        payload=event_data,
+                        points=[point_id],
+                        wait=True,
+                    ),
+                )
+                if result.status == qdrant_models.UpdateStatus.COMPLETED:
+                    self.logger.info("✅ Payload updated for event %s (no embedding)", event_id)
+                    return True
+                else:
+                    self.logger.warning(
+                        "⚠️ set_payload status %s for event %s; falling back to fresh point upsert",
+                        result.status,
+                        event_id,
+                    )
+            except Exception as e:
+                # Typical when point doesn't exist (404)
+                self.logger.warning(
+                    "⚠️ set_payload failed for event %s (%s); inserting new stub point", event_id, e
+                )
+
+            # fall back: create dummy vector (zeros) to insert new point
+            dummy_vector = [0.0] * self.vector_size
             point = models.PointStruct(
                 id=point_id,
-                vector=embedding,
-                payload={
-                    **event_data,
-                    "original_id": str(event_id)
-                }
+                vector=dummy_vector,
+                payload={**event_data, "original_id": str(event_id)},
             )
-
             await loop.run_in_executor(
                 None,
-                lambda: self.client.upsert(collection_name=self.collection_name, points=[point], wait=True)
+                lambda: self.client.upsert(
+                    collection_name=self.collection_name, points=[point], wait=True
+                ),
             )
-
-            self.logger.info(f"✅ Successfully upserted event: {event_id}")
+            self.logger.info("✅ Inserted new stub point for event %s", event_id)
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to upsert event {event_id}: {str(e)}", exc_info=True)
+            self.logger.error("❌ Failed to upsert/update event %s: %s", event_id, str(e), exc_info=True)
             return False
 
     async def delete_events(self, ids: List[str]) -> int:

@@ -14,7 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt \
-    && rm -rf /root/.cache
+    && playwright install --with-deps chromium \
+    # Remove only pip cache to reduce image size; keep Playwright browser binaries in /root/.cache/ms-playwright
+    && rm -rf /root/.cache/pip
 
 # Copy the rest of the application code
 COPY src/connector/main.py /app/src/connector/main.py

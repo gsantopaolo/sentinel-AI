@@ -5,7 +5,7 @@ from datetime import datetime
 class EventPayload(BaseModel):
     id: str
     title: str
-    content: str
+    content: Optional[str] = None  # some legacy records may omit
     timestamp: datetime
     source: str
     categories: Optional[List[str]] = None
@@ -26,4 +26,3 @@ class SearchResult(BaseModel):
     id: str
     score: float
     payload: EventPayload
-

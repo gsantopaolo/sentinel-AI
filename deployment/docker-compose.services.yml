@@ -36,28 +36,13 @@ services:
       nats:
         condition: service_healthy
       qdrant:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
-      interval: 60s
+      interval: 20s
       start_period: 10s
       timeout: 3s
       retries: 3
-#    labels:
-#      - "traefik.enable=true"
-#      # 1) Match requests to localhost + /api
-#      - "traefik.http.routers.api.rule=Host(`localhost`) && PathPrefix(`/api`)"
-#      # 2) Listen on both HTTP & HTTPS
-#      - "traefik.http.routers.api.entrypoints=web"
-##      - "traefik.http.routers.api.entrypoints=websecure"
-#      # 3) Terminate TLS and use ACME resolver
-##      - "traefik.http.routers.api.tls=true"
-##      - "traefik.http.routers.api.tls.certresolver=myresolver"
-#      # 4) Strip /api before forwarding
-#      - "traefik.http.routers.api.middlewares=api-stripprefix"
-#      - "traefik.http.middlewares.api-stripprefix.stripprefix.prefixes=/api"
-#      # 5) Forward to port 8000 in the container
-#      - "traefik.http.services.api.loadbalancer.server.port=8000"
 
   connector:
     build:
@@ -81,7 +66,7 @@ services:
       nats:
         condition: service_healthy
       qdrant:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
       interval: 60s
@@ -121,7 +106,7 @@ services:
       nats:
         condition: service_healthy
       qdrant:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
       interval: 60s
@@ -157,7 +142,7 @@ services:
       nats:
         condition: service_healthy
       qdrant:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
       interval: 60s
@@ -197,14 +182,7 @@ services:
       nats:
         condition: service_healthy
       qdrant:
-        condition: service_started
-#    healthcheck:
-#      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
-#      interval: 60s
-#      start_period: 10s
-#      timeout: 3s
-#      retries: 3
-
+        condition: service_healthy
 
   scheduler:
     build:
@@ -288,26 +266,6 @@ services:
       api:
         condition: service_healthy
 
-
-
-#  nats:
-#    image: nats:latest
-#    container_name: sentinel-nats
-#    ports:
-#      - "4222:4222"
-#      - "8222:8222" # Monitoring port
-#    volumes:
-#      - nats-data:/data/nats
-#    command:
-#      - "--name=nats"
-#      - "--http_port=8222"
-#      - "--js"
-#      - "--sd=/data/nats"
-#
-#    restart: unless-stopped
-#    networks:
-#      - sentinel-backend-network
-
   nats:
     image: sentinel-nats:latest
     build:
@@ -341,6 +299,9 @@ services:
 #      - ${CONFIG_PATH}/nats/nats-config.json:/srv/config.json
     ports:
       - "8502:80"
+    depends_on:
+      nats:
+        condition: service_healthy
     networks:
       - sentinel-frontend-network
       - sentinel-backend-network
@@ -356,12 +317,11 @@ services:
     restart: unless-stopped
     networks:
       - sentinel-backend-network
-#    healthcheck:
-#      test: ["CMD-SHELL", "echo > /dev/tcp/127.0.0.1/6333 || exit 1"]
-#      interval: 30s
-#      timeout: 5s
-#      retries: 5
-#      start_period: 10s
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c \":> /dev/tcp/127.0.0.1/6333 || exit 1\""]
+      interval: 5s
+      timeout: 5s
+      retries: 3
 
   postgres:
     image: postgres:16
@@ -395,6 +355,9 @@ services:
     networks:
       - sentinel-backend-network
       - sentinel-frontend-network
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: [ "CMD", "wget", "-qO-", "http://localhost:80/misc/ping" ]
       interval: 20s

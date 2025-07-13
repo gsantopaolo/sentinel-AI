@@ -41,9 +41,82 @@ This project implements a scalable, real-time newsfeed platform that aggregates,
 
 ---
 
-## 🚀 Installation
+## 🚀 Installation & Quick Start
 
-> *To be completed: prerequisites, Helm charts, Docker Compose commands, etc.*
+This repository ships **Docker-Compose** manifests (plus helper scripts) that spin up the full micro-service stack in seconds. You can also run an individual service on your laptop for development.
+
+### 0. Prerequisites
+
+* [Docker Desktop](https://www.docker.com/) **or** `docker` ≥ 20.10 and `docker-compose` V2.
+* Linux / macOS (the scripts use `bash`).
+* An API key for your preferred LLM provider (e.g. OpenAI, Anthropic).
+
+### 1. Configure environment variables
+
+```
+deployment/.env.example   # single file used by docker-compose
+src/*/.env.example        # one per micro-service (only needed if you run them separately)
+```
+
+• **Docker-Compose path (recommended):**  
+  Rename `deployment/.env.example` → `deployment/.env` and add your LLM provider key(s).  
+  All other variables already have sensible defaults.
+
+• **Local-service path:**  
+  When hacking on a service outside Docker, copy its `.env.example` to `.env` and tweak as needed.
+
+### 2. Start the cluster
+
+From one directory **above** the repo root (so the docker build context remains small):
+
+```bash
+chmod +x deployment/*.sh          # first time only
+sudo deployment/start.sh          # builds & launches the stack
+```
+
+The very first run downloads base images and builds all containers, so it can take several minutes. Subsequent starts are faster.
+
+### 3. Stop the cluster
+
+```bash
+sudo deployment/stop.sh
+```
+
+### 4. Monitoring & troubleshooting
+
+After the stack is up, the script prints a **Portainer** URL (e.g. `http://localhost:9000`). On first visit you must create an admin user & password. From the dashboard you can:
+
+* Inspect container logs.
+* Restart a service if it failed to start (this PoC occasionally needs manual restarts).
+
+Dashboards exposed by the compose file:
+
+| Service   | URL                      |
+|-----------|--------------------------|
+| Portainer | `http://localhost:9000`  |
+| Qdrant    | `http://localhost:6333`  |
+| NATS      | `http://localhost:8222`  |
+| Postgres  | `http://localhost:5432`¹ |
+¹ psql/GUI only—no web UI included.
+
+> 💡 **Tip:** After adding a few sources and ingesting news, open the Qdrant dashboard to explore the stored vectors.
+
+### 5. Running a single micro-service locally
+
+```bash
+cd src/ranker
+cp .env.example .env   # edit variables if needed
+pip install -r requirements.txt
+python main.py
+```
+
+Make sure Docker Compose is already running NATS, Postgres, and Qdrant (or point the env vars to your own instances).
+
+---
+
+> check out [my blog](https://genmind.ch)
+
+> Powered by ❤️ for intelligent, AI-driven insights!
 
 ---
 
@@ -75,6 +148,4 @@ This project implements a scalable, real-time newsfeed platform that aggregates,
 
 ---
 
-> check out [my blog](https://genmind.ch)
-
-> Powered by ❤️ for intelligent, AI-driven insights!
+> Having issues? Check container logs in Portainer or run `docker compose logs -f <service>`.

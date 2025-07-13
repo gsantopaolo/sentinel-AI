@@ -1,4 +1,8 @@
 nats-py==2.10.0
 python-dotenv==1.1.1
 protobuf==6.31.1
-protobuf==6.31.1
+playwright==1.53.0
+qdrant-client==1.14.3
+sentence-transformers==5.0.0
+SQLAlchemy==2.0.41
+psycopg2-binary==2.9.10

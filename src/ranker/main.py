@@ -7,7 +7,7 @@ from typing import List
 from dotenv import load_dotenv
 from nats.aio.msg import Msg
 import yaml
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from src.lib_py.middlewares.jetstream_event_subscriber import JetStreamEventSubscriber
 from src.lib_py.middlewares.jetstream_publisher import JetStreamPublisher
@@ -72,13 +72,18 @@ def calculate_recency_score(timestamp_str: str) -> float:
         logger.warning(f"⚠️ Invalid timestamp format: {timestamp_str}. Using current time for recency calculation.")
         event_time = datetime.now(timezone.utc)
 
-    # Use timezone-aware datetime for the current time
+    # Ensure event_time is timezone-aware
+    if event_time.tzinfo is None or event_time.tzinfo.utcoffset(event_time) is None:
+        logger.debug("🕒 Converting naive datetime to UTC for %s", timestamp_str)
+        event_time = event_time.replace(tzinfo=timezone.utc)
+
     time_diff = datetime.now(timezone.utc) - event_time
     half_life_seconds = RECENCY_DECAY['half_life_hours'] * 3600
 
     # Exponential decay formula: score = max_score * (0.5 ^ (time_diff_seconds / half_life_seconds))
     decay_factor = 0.5 ** (time_diff.total_seconds() / half_life_seconds)
     score = RECENCY_DECAY['max_score'] * decay_factor
+    logger.debug("🕒 Recency score %.2f for diff %s", score, time_diff)
     return score
 
 async def filtered_event_handler(msg: Msg):
@@ -101,25 +106,52 @@ async def filtered_event_handler(msg: Msg):
             RANKING_PARAMETERS['importance_weight'] * importance_score +
             RANKING_PARAMETERS['recency_weight'] * recency_score
         )
-        logger.info(f"Calculated final score for '{filtered_event.id}': {final_score:.2f}")
+        logger.info(
+            "🧮 Scores for %s – importance: %.2f, recency: %.2f, final: %.2f",
+            filtered_event.id,
+            importance_score,
+            recency_score,
+            final_score,
+        )
 
-        # 4. Update event in Qdrant with scores
-        # Retrieve the full event payload from Qdrant first to update it
-        event_data = await qdrant_logic.retrieve_event_by_id(filtered_event.id)
-        if event_data:
-            event_data['importance_score'] = importance_score
-            event_data['recency_score'] = recency_score
-            event_data['final_score'] = final_score
-            try:
-                success = await qdrant_logic.upsert_event(event_data)  # Upsert updates existing record
-                if success:
-                    logger.info(f"🗄️ Event '{filtered_event.id}' scores updated in Qdrant.")
-                else:
-                    logger.error(f"❌ Failed to update event '{filtered_event.id}' in Qdrant.")
-            except Exception as e:
-                logger.error(f"An error occurred while upserting to Qdrant: {e}")
+        # 4. Update event in Qdrant with scores – always upsert, even if record was missing
+        base_payload = await qdrant_logic.retrieve_event_by_id(filtered_event.id)
+
+        if not base_payload:
+            logger.warning(
+                "⚠️ Event '%s' missing in Qdrant, creating fresh record with scores.",
+                filtered_event.id,
+            )
+            # Build minimal payload from the filtered_event protobuf
+            event_data = {
+                "id": filtered_event.id,
+                "title": filtered_event.title,
+                "content": "",  # placeholder to satisfy downstream schema
+                "timestamp": filtered_event.timestamp,
+                "source": filtered_event.source,
+                "categories": list(filtered_event.categories),
+                "is_relevant": True,
+                "importance_score": importance_score,
+                "recency_score": recency_score,
+                "final_score": final_score,
+            }
         else:
-            logger.warning(f"⚠️ Event '{filtered_event.id}' not found in Qdrant for score update.")
+            event_data = {
+                **base_payload,
+                "importance_score": importance_score,
+                "recency_score": recency_score,
+                "final_score": final_score,
+            }
+        import json, pprint
+        logger.debug("⬆️  Upserting payload to Qdrant: %s", pprint.pformat(event_data))
+        try:
+            success = await qdrant_logic.upsert_event(event_data)
+            if success:
+                logger.info("🗄️ Event '%s' scores upserted in Qdrant.", filtered_event.id)
+            else:
+                logger.error("❌ Failed to upsert scores for event '%s'.", filtered_event.id)
+        except Exception as e:
+            logger.error("An error occurred while upserting to Qdrant: %s", e)
 
         # 5. Publish ranked event
         ranked_event = ranked_event_pb2.RankedEvent(
@@ -132,6 +164,15 @@ async def filtered_event_handler(msg: Msg):
             importance_score=importance_score,
             recency_score=recency_score,
             final_score=final_score
+        )
+        logger.debug(
+            "📤 Publishing ranked event with scores: %s",
+            {
+                "id": ranked_event.id,
+                "importance": ranked_event.importance_score,
+                "recency": ranked_event.recency_score,
+                "final": ranked_event.final_score,
+            },
         )
         await ranked_events_publisher.publish(ranked_event)
         logger.info(f"✉️ Published ranked event '{filtered_event.id}' to ranked.events.")
@@ -160,12 +201,8 @@ async def main():
         collection_name=QDRANT_COLLECTION_NAME,
         embedding_model_name=EMBEDDING_MODEL_NAME
     )
-    try:
-        qdrant_logic.ensure_collection_exists()
-        logger.info("✅ Qdrant collection ensured to exist.")
-    except Exception as e:
-        logger.error(f"❌ Failed to ensure Qdrant collection: {e}")
-        return # Exit if Qdrant setup fails
+    # Collection indexes are verified in QdrantLogic.__init__; no additional call needed.
+    logger.info("✅ Qdrant collection available and indexes verified.")
 
     # Initialize ranked events publisher
     global ranked_events_publisher
