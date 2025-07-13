@@ -2,8 +2,10 @@
 
 When I first read the requirements, it became clear that **scalability** was paramount. Accordingly, I implemented Sentinel-AI as a proof of concept designed to run on Kubernetes and scale seamlessly to millions of users. With the right production-level enhancements—such as optimized provisioning, autoscaling policies, and resilient networking—this prototype can be deployed in a very short timeframe and handle heavy loads at production scale.
 
-Although this initial version is not fully agentic, it already leverages embeddings and a large language model (LLM) and can be easily connected to a private inference server (currently supporting SaaS providers like OpenAI and Anthropic). For an overview of how to integrate a high-throughput, private inference cluster at scale, see the [CogniX architecture](https://github.com/gen-mind/cognix/tree/main/docs#architecture).
-
+Although this initial version is not fully agentic, it already leverages embeddings and a large language model (LLM) and can be easily connected to a private inference server (currently supporting SaaS providers like OpenAI and Anthropic). For an overview of how to integrate a high-throughput, private inference cluster at scale, 
+see the [CogniX architecture](https://github.com/gen-mind/cognix/tree/main/docs#architecture).
+<br />
+At the moment, the app is not agentic, but converting the AI-powered components into fully agentic systems is straightforward—see the pseudocode in [src/agentic](https://github.com/gen-mind/sentinel-ai/tree/main/src/agentic) for details.
 Sentinel-AI is an **event-driven**, **microservice** platform for real-time feed ingestion, filtering, ranking, and anomaly detection—designed to run on Kubernetes and scale to millions of users. 🚀🐳
 
 This project implements a scalable, real-time newsfeed platform that aggregates, filters, stores, and ranks IT-related event data from multiple sources. It is built with an asynchronous, microservice-based architecture, where each service has a distinct responsibility and communicates via a message bus.
