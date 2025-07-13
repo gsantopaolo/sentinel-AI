@@ -210,16 +210,24 @@ class QdrantLogic:
         self.logger.info(f"🔍 Keyword search for: '{query}'")
         try:
             loop = asyncio.get_running_loop()
-            hits = await loop.run_in_executor(
+            # Use full-text search via payload filter with MatchText – avoids requiring a query_vector
+            records, _ = await loop.run_in_executor(
                 None,
-                lambda: self.client.search(
+                lambda: self.client.scroll(
                     collection_name=self.collection_name,
-                    query_text=f"content:{query}",
+                    scroll_filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="content",
+                                match=models.MatchText(text=query)
+                            )
+                        ]
+                    ),
                     limit=limit,
                     with_payload=True,
                 )
             )
-            return [hit.payload for hit in hits]
+            return [rec.payload for rec in records]
         except Exception as e:
             self.logger.error(f"❌ Keyword search failed: {e}", exc_info=True)
             raise RuntimeError("Keyword search failed") from e

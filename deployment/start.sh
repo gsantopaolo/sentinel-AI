@@ -12,20 +12,7 @@ else
   exit 1
 fi
 
-# --- Start: Specific check for problematic variables ---
-# This check is added because complex multi-line variables (like CB_ENVS from another project)
-# can cause syntax errors when sourced by bash if not properly escaped or handled.
-# If you copied content from 'excluded/deployment/.env' into your 'deployment/.env',
-# please ensure such variables are removed or correctly formatted for bash.
-if [ -n "${CB_ENVS:-}" ]; then
-  echo "
-⚠️ WARNING: The 'CB_ENVS' variable was found in your deployment/.env file."
-  echo "This variable contains complex multi-line content that can cause syntax errors."
-  echo "It is likely from another project and is NOT needed for Sentinel AI."
-  echo "Please remove 'CB_ENVS' from your deployment/.env file and try again."
-  exit 1
-fi
-# --- End: Specific check for problematic variables ---
+
 
 # Function to ensure directory exists and has correct permissions
 ensure_dir() {
