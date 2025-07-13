@@ -51,8 +51,18 @@ raw_events_publisher: Optional[JetStreamPublisher] = None
 
 # DB for deduplication
 DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL) if DATABASE_URL else None
-SessionFactory: Optional[sessionmaker] = sessionmaker(bind=engine) if engine else None
+
+# Fallback to local SQLite if no DB URL provided
+if not DATABASE_URL:
+    DATABASE_URL = "sqlite:///processed_items.db"
+    logger.warning("DATABASE_URL not set. Falling back to local SQLite DB at %s", DATABASE_URL)
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+)
+
+SessionFactory: Optional[sessionmaker] = sessionmaker(bind=engine)
 
 class ProcessedItem(Base):
     __tablename__ = "processed_items"

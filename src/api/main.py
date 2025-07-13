@@ -284,7 +284,7 @@ async def create_source(payload: SourceCreate, db: Session = Depends(get_db)):
     )
     try:
         await new_source_publisher.publish(msg)
-        logger.info(f"✉️ Published new.source: {msg.id} source={msg.source} to be processed by scheduler service")
+        logger.info(f"✉️ Published new.source: id={msg.id} name={msg.name} to be processed by scheduler service")
     except Exception as e:
         logger.error(f"❌ Publishing new.source id={src.id} failed: {e}")
     return source_to_read_model(src)

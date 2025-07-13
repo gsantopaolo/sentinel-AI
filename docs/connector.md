@@ -17,6 +17,24 @@ In the current **proof-of-concept** it uses Playwright + headless Chromium to fe
 
 > ⚠️ **Not production-ready** – the scraper is intentionally naïve: no pagination, no JS login, no cookie handling, no rate-limiting, and it relies on simple heuristics (`len(text) > 25`, link starts with `http`). It is good enough to demonstrate the end-to-end pipeline but will need hardening for real-world news sites.
 
+### Why the Reddit *r/cybersecurity* page yields zero links
+
+Reddit post titles are typically short (“New Fortinet CVE” ≈ 20 chars).  Because the current filter keeps only anchors whose **visible text length is > 25 characters**, every Reddit anchor is discarded, so `_scrape_links()` returns an empty list.
+
+To ingest Reddit you can either lower the threshold (e.g. `> 5`) or implement a CSS-selector rule that targets the `<h3>` post-title anchors.
+
+### Suggested starter sources that fit the current heuristic
+
+The following public pages have headline anchors well above 25 characters and work out-of-the-box:
+
+| Source | URL to use in `config.url` |
+|--------|----------------------------|
+| SecurityWeek – Latest Cybersecurity News | https://www.securityweek.com/category/security-week-news/ |
+| BleepingComputer – Security | https://www.bleepingcomputer.com/news/security/ |
+| The Register – Security | https://www.theregister.com/security/ |
+| TechCrunch – Security | https://techcrunch.com/tag/security/ |
+| CSO Online – Security | https://www.csoonline.com/category/security/ |
+
 ### 1. Reacting to Poll Requests (`poll.source`)
 
 When a `poll.source` event is received, the connector acknowledges the message. This event contains information about the source to be polled. The service then proceeds to simulate the data fetching and normalization process.

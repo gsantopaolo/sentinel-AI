@@ -57,6 +57,7 @@ services:
       NATS_CONNECT_TIMEOUT: ${NATS_CONNECT_TIMEOUT}
       NATS_MAX_RECONNECT_ATTEMPTS: ${NATS_MAX_RECONNECT_ATTEMPTS}
       CONNECTOR_READINESS_TIME_OUT: ${CONNECTOR_READINESS_TIME_OUT}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     restart: unless-stopped
     networks:
       - sentinel-backend-network
@@ -277,7 +278,7 @@ services:
       - "4222:4222"
       - "8222:8222"   # Monitoring / health endpoint
     volumes:
-      - ${DATA_PATH}/nats:/data/nats
+      - ./${DATA_PATH}/nats:/data/nats
     restart: unless-stopped
     networks:
       - sentinel-backend-network
@@ -314,7 +315,7 @@ services:
       - "6333:6333" # Web UI
       - "6334:6334"
     volumes:
-      - ${DATA_PATH}/qdrant:/qdrant/storage
+      - ./${DATA_PATH}/qdrant:/qdrant/storage
     restart: unless-stopped
     networks:
       - sentinel-backend-network
@@ -334,7 +335,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - ${DATA_PATH}/postgres:/var/lib/postgresql/data
+      - ./${DATA_PATH}/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s

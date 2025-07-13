@@ -107,3 +107,12 @@ sequenceDiagram
 *   **`src/lib_py/middlewares/**`: A suite of custom middlewares for handling NATS connections and exposing a readiness probe.
 *   **`src/lib_py/gen_types/**`: Contains the Protobuf definitions for `RawEvent` (input) and `FilteredEvent` (output).
 *   **`PyYAML`**: Used for loading the filtering rules from `filter_config.yaml`.
+
+### Why Can Nonsense Text Pass the Filter?
+
+You might encounter cases where an event containing only seemingly meaningless words such as *"pippo pluto"* still makes it through the relevance gate.  This happens because the **current implementation relies solely on the LLM prompt** in `filter_config.yaml`:
+
+1. No cheap, deterministic keyword pre-filter is applied.
+2. LLMs tend to err on the side of relevance when the prompt is vague or the input is very short, often returning *"RELEVANT"* even for random text.
+
+Therefore, without an additional rule, the event is accepted and stored.  If stricter filtering is desired, a simple keyword include/exclude check (already defined in the YAML but not yet used) should be implemented **before** the LLM call to reject trivial or off-topic content.

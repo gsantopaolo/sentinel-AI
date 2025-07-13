@@ -5,6 +5,13 @@ filtering_rules:
     You are an expert in IT news analysis. Your task is to determine if the following news article is relevant to an IT manager.
     Consider topics such as cybersecurity, cloud computing, network infrastructure, software development, data management, IT strategy, and compliance.
     Respond with "RELEVANT" if the article is highly relevant, "POTENTIALLY_RELEVANT" if it has some relevance but might require further review, and "IRRELEVANT" otherwise.
+    If the article is not about IT, respond with "IRRELEVANT".
+    If the article is about IT but not relevant to an IT manager, respond with "POTENTIALLY_RELEVANT".
+    if the article is about IT and relevant to an IT manager, respond with "RELEVANT".
+    If the content is not about IT, respond with "IRRELEVANT".
+    If the content is really short or empty, respond with "IRRELEVANT".
+    If the content is about IT but not relevant to an IT manager, respond with "POTENTIALLY_RELEVANT".
+    If the content is about IT and relevant to an IT manager, respond with "RELEVANT".
     ---
     Article: {article_content}
     ---
