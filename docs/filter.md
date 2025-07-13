@@ -1,68 +1,76 @@
 # Filter Service
 
-## Overview
+## 1. Overview
 
-The `filter` service is a critical component of the Sentinel AI platform, acting as the first line of defense and enrichment for incoming news events. Its primary role is to process raw, uncurated events, determine their relevance, and prepare them for subsequent stages of ranking and analysis.
+The `filter` service is the primary gatekeeper of the Sentinel AI platform. It acts as the first line of defense and enrichment for all incoming raw data, ensuring that only relevant, high-quality information enters the system's core processing pipeline.
 
-Its core responsibilities include:
-1.  **Subscribe** to `raw.events` from the NATS stream.
-2.  **Apply Relevance Filters**: Determine if an event is relevant to a specific domain (e.g., IT management) using a Large Language Model (LLM).
-3.  **Discard or Enrich**: Discard irrelevant events with a detailed log, or enrich relevant events by generating vector embeddings and assigning categories.
-4.  **Initial Persistence**: For relevant events, perform the first and only initial write to the Qdrant vector database.
-5.  **Publish**: Publish the successfully persisted events as `filtered.events` to a NATS stream for downstream services.
+Its core responsibilities are:
+1.  **Consume Raw Events**: Subscribe to the `raw.events` NATS subject, processing each incoming news event.
+2.  **Apply LLM-Powered Filters**: Use a configured Large Language Model (LLM) to determine if an event is relevant to the platform's domain (e.g., IT management).
+3.  **Discard or Enrich**:
+    *   **Irrelevant Events**: Discard them immediately, logging the reason for full traceability.
+    *   **Relevant Events**: Enrich them by using an LLM to assign categories.
+4.  **Initial Persistence**: For relevant events, it orchestrates the first and only initial write to the Qdrant vector database. The underlying `QdrantLogic` library handles the creation of vector embeddings during this step.
+5.  **Publish Filtered Events**: Publish the enriched and successfully persisted events as `FilteredEvent` messages to the `filtered.events` NATS subject for downstream consumption by the [`ranker` service](./ranker.md).
 
-## Core Functionality: Intelligent Filtering and Persistence
+## 2. Core Functionality: LLM-Driven Analysis
 
-The `filter` service leverages the power of LLMs to perform nuanced content analysis and acts as the gatekeeper to the vector database.
+The `filter` service leverages the power of LLMs to perform nuanced content analysis, acting as an intelligent gatekeeper to the vector database.
 
-### 1. Relevance Filtering with LLM
+### Relevance Filtering
 
-Upon receiving a `raw.event`, the `filter` service first assesses its relevance. This is achieved by sending the event's content to a configured LLM. Events deemed irrelevant are **discarded** and never enter the database. A detailed warning is logged, including the event ID, title, and the LLM's reasoning, to ensure full traceability for rejected events.
+Upon receiving a `raw.event`, the service first assesses its relevance by sending the event's content to a configured LLM using a specific prompt. Events deemed irrelevant are **discarded** and never enter the database. A detailed warning is logged, including the event ID, title, and the LLM's reasoning, to ensure full traceability for rejected events.
 
-**Example Configuration (`filter_config.yaml` - Relevance Prompt):**
+### Categorization
+
+For events that pass the relevance filter, the service makes a second LLM call to classify the event into one or more predefined categories. These categories are crucial for downstream services like the `ranker`, which uses them to calculate an event's importance.
+
+## 3. Design Principle: Configuration-Driven Logic
+
+The `filter` service's reliance on `filter_config.yaml` is a cornerstone of its flexible and powerful design. This approach cleanly separates the stable filtering logic from the volatile, domain-specific rules.
+
+*   **Domain Agnosticism**: By externalizing LLM prompts, the service is not hardcoded to a specific domain. It can be repurposed for finance, healthcare, or any other industry by simply modifying the YAML configuration, without requiring code changes.
+*   **Dynamic Adaptability**: The criteria for relevance and categorization can be updated on the fly by adjusting the prompts in the YAML file, allowing the system to adapt to evolving requirements or new trends.
+*   **Separation of Concerns**: It cleanly separates the business logic of filtering from the specific content and parameters of the LLM interactions, promoting cleaner code and easier maintenance.
+*   **Rapid Experimentation**: Different filtering strategies and LLM prompts can be easily A/B tested by modifying the YAML, facilitating rapid iteration and optimization.
+
+**Example Configuration (`filter_config.yaml`):**
 ```yaml
-llm_config:
-  provider: "openai"
-  model_name: "gpt-4o-mini"
-  api_key_env_var: "OPENAI_API_KEY"
-
 filtering_rules:
   relevance_prompt: |
     You are an expert in IT news analysis. Your task is to determine if the following news article is relevant to an IT manager.
     Consider topics such as cybersecurity, cloud computing, network infrastructure, software development, data management, IT strategy, and compliance.
-    Respond with "RELEVANT" if the article is highly relevant, "POTENTIALLY_RELEVANT" if it has some relevance but might require further review, and "IRRELEVANT" otherwise.
+    Respond with "RELEVANT" if the article is highly relevant, "POTENTIALLY_RELEVANT" if it has some relevance, and "IRRELEVANT" otherwise.
     ---
     Article: {article_content}
     ---
     Relevance:
+  category_prompt: |
+    Based on the following article, classify it into one or more of these categories: Cybersecurity, Cloud Computing, Network Infrastructure, Software Development, Other.
+    Respond with a comma-separated list of the most relevant categories.
+    ---
+    Article: {article_content}
+    ---
+    Categories:
 ```
 
-### 2. Categorization and Embedding Generation
+## 4. Published Message Contract: `FilteredEvent`
 
-For events that pass the relevance filter, the service performs two key actions:
-1.  **Categorization**: It makes a second LLM call to classify the event into one or more predefined categories.
-2.  **Embedding Generation**: It uses a `SentenceTransformer` model to generate vector embeddings for the event's content. This is the primary point where the computationally intensive embedding process occurs.
+When the `filter` finishes processing a relevant event, it publishes a `FilteredEvent` protobuf message to the `filtered.events` subject.
 
-### 3. Initial Persistence to Qdrant
+**Fields:**
+- `id` (string)
+- `title` (string)
+- `timestamp` (string)
+- `source` (string)
+- `categories` (repeated string)
+- `is_relevant` (bool)
 
-This is a critical new responsibility. The `filter` service is the **first and only service** to write an event to Qdrant. It constructs a complete record—including original metadata, LLM-derived categories, and the vector embedding—and upserts it into the database. If this persistence step fails, the event is not published downstream, ensuring data consistency.
+## 5. Technical Deep Dive
 
-## Why YAML Configuration?
+### Data Flow Diagram
 
-The `filter` service's reliance on `filter_config.yaml` is a cornerstone of its flexible design:
-
-*   **Domain Agnosticism**: By externalizing LLM prompts and filtering rules, the service is not hardcoded to a specific domain (e.g., IT news). It can be repurposed for finance, medical, or any other industry by simply modifying the YAML configuration, without requiring code changes.
-*   **Dynamic Adaptability**: The criteria for relevance and categorization can be updated on the fly by adjusting the prompts and rules in the YAML file, allowing the system to adapt to evolving requirements or new trends.
-*   **Separation of Concerns**: It clearly separates the business logic of filtering from the specific content and parameters of the LLM interactions, promoting cleaner code and easier maintenance.
-*   **Experimentation**: Different filtering strategies and LLM prompts can be easily experimented with by modifying the YAML, facilitating rapid iteration and optimization.
-
-## Technical Deep Dive
-
-The `filter` service is implemented as a Python microservice, utilizing asynchronous programming with `asyncio` and NATS JetStream for efficient event processing.
-
-### Data Flow and Processing Sequence
-
-The following sequence diagram illustrates how a raw event is processed by the `filter` service:
+The following diagram illustrates how a raw event is processed by the `filter` service:
 
 ```mermaid
 sequenceDiagram
@@ -73,59 +81,29 @@ sequenceDiagram
     participant Qdrant as Qdrant DB
 
     API->>NATS: Publish raw.events
-    NATS-->>Filter: raw.events message
-    Filter->>Filter: Parse RawEvent Protobuf
-    Filter->>LLM: Request Relevance
+    NATS-->>Filter: Consume raw.events message
+    Filter->>LLM: Request Relevance Check
     LLM-->>Filter: Relevance Response
+
     alt Event is Relevant
         Filter->>LLM: Request Categories
         LLM-->>Filter: Categories Response
-        Filter->>Filter: Generate Embeddings
-        Filter->>Qdrant: Upsert event payload
+        Filter->>Qdrant: Upsert event payload (embeddings generated by QdrantLogic)
         Qdrant-->>Filter: Acknowledge upsert
-        Filter->>Filter: Construct FilteredEvent Protobuf
         Filter->>NATS: Publish filtered.events
     else Event is Irrelevant
         Filter->>Filter: Log detailed warning (ID, Title, Reason)
     end
+
     Filter->>NATS: Acknowledge raw.events message
-```
-
-### Internal Logic Flow
-
-The internal processing of a `raw.events` message within the `filter` service follows these steps:
-
-```mermaid
-flowchart TD
-    A["Start: Receive raw.events message"] --> B{"Parse RawEvent Protobuf"}
-    B --> C["Extract Event Content"]
-    C --> D{"Call LLM for Relevance (relevance_prompt)"}
-    D -->|LLM Response: IRRELEVANT| E["Log detailed warning: 🗑️ Event discarded..."]
-    D -->|LLM Response: RELEVANT/POTENTIALLY_RELEVANT| F{"Call LLM for Categories (category_prompt)"}
-    F --> G["Generate Embeddings"]
-    G --> H["Upsert Event to Qdrant"]
-    H -->|Success| I["Construct FilteredEvent Protobuf"]
-    H -->|Failure| L["Log Error & NACK message"]
-    I --> J["Publish FilteredEvent to NATS"]
-    J --> K["Acknowledge raw.events message"]
-    E --> K
-    L --> M[End]
-    K --> M
 ```
 
 ### Key Components and Dependencies
 
-*   **NATS JetStream**: Used for asynchronous message passing between services (`raw.events` subscription, `filtered.events` publication).
+*   **NATS JetStream**: Used for asynchronous message passing (`raw.events` subscription, `filtered.events` publication).
 *   **Qdrant**: The vector database where enriched event metadata and embeddings are stored.
-*   **LLM Provider (OpenAI/Anthropic)**: External service used for natural language understanding, relevance classification, and categorization.
-*   **`src/lib_py/middlewares/JetStreamEventSubscriber`**: Handles subscribing to NATS streams.
-*   **`src/lib_py/middlewares/JetStreamPublisher`**: Handles publishing messages to NATS streams.
-*   **`src/lib_py/middlewares/ReadinessProbe`**: Ensures the service's health can be monitored.
-*   **`src/lib_py/logic/QdrantLogic`**: Provides an abstraction layer for interacting with Qdrant, including upserting event data.
-*   **`src/lib_py/models/qdrant_models.py`**: Defines the data structures for events stored in Qdrant.
-*   **`src/lib_py/gen_types/raw_event_pb2`**: Protobuf definition for incoming raw events.
-*   **`src/lib_py/gen_types/filtered_event_pb2`**: Protobuf definition for outgoing filtered events.
-*   **`SentenceTransformer`**: Used for generating vector embeddings from text content.
-*   **`PyYAML`**: Used for loading the `filter_config.yaml` file.
-
-This comprehensive overview should provide a clear understanding of the `filter` service's role, its internal workings, and its configurable nature within the Sentinel AI platform.
+*   **LLM Provider (OpenAI/Anthropic)**: External service used for relevance classification and categorization. Configured via environment variables (`LLM_PROVIDER`, `LLM_MODEL_NAME`, `OPENAI_API_KEY`, etc.).
+*   **`src/lib_py/logic/QdrantLogic`**: Provides an abstraction layer for interacting with Qdrant. **Crucially, this library internally handles the generation of vector embeddings** from the event content before persisting it.
+*   **`src/lib_py/middlewares/**`: A suite of custom middlewares for handling NATS connections and exposing a readiness probe.
+*   **`src/lib_py/gen_types/**`: Contains the Protobuf definitions for `RawEvent` (input) and `FilteredEvent` (output).
+*   **`PyYAML`**: Used for loading the filtering rules from `filter_config.yaml`.

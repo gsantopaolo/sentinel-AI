@@ -7,7 +7,7 @@ from typing import List
 from dotenv import load_dotenv
 from nats.aio.msg import Msg
 import yaml
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.lib_py.middlewares.jetstream_event_subscriber import JetStreamEventSubscriber
 from src.lib_py.middlewares.jetstream_publisher import JetStreamPublisher
@@ -64,16 +64,18 @@ def calculate_importance_score(categories: List[str]) -> float:
         score += CATEGORY_IMPORTANCE_SCORES.get(category, CATEGORY_IMPORTANCE_SCORES['Other'])
     return score
 
+
 def calculate_recency_score(timestamp_str: str) -> float:
     try:
         event_time = datetime.fromisoformat(timestamp_str)
     except ValueError:
         logger.warning(f"⚠️ Invalid timestamp format: {timestamp_str}. Using current time for recency calculation.")
-        event_time = datetime.utcnow()
+        event_time = datetime.now(timezone.utc)
 
-    time_diff = datetime.utcnow() - event_time
+    # Use timezone-aware datetime for the current time
+    time_diff = datetime.now(timezone.utc) - event_time
     half_life_seconds = RECENCY_DECAY['half_life_hours'] * 3600
-    
+
     # Exponential decay formula: score = max_score * (0.5 ^ (time_diff_seconds / half_life_seconds))
     decay_factor = 0.5 ** (time_diff.total_seconds() / half_life_seconds)
     score = RECENCY_DECAY['max_score'] * decay_factor

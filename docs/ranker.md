@@ -1,22 +1,25 @@
 # Ranker Service
 
-## Overview
+## 1. Overview
 
-The `ranker` service is a crucial component of the Sentinel AI platform, responsible for intelligently ordering news events based on their relevance and timeliness. It acts as an intermediary between the `filter` service, which identifies and enriches relevant events, and downstream services like the [`api`](./api.md) and [`inspector`](./inspector.md), which consume ranked data.
+The `ranker` service is the core curation engine of the Sentinel AI platform. It is responsible for intelligently scoring and ordering news events based on their relevance and timeliness, ensuring that the most important and freshest content is prioritized for the end-user (e.g., an IT Manager).
 
-Its primary function is to:
-1.  **Subscribe** to `filtered.events` from the [`filter` service](filter.md).
-2.  **Compute** a deterministic ranking score for each event by balancing its "importance" (derived from LLM-based categorization) and "recency" (how recently it occurred).
-3.  **Persist** these calculated scores back into Qdrant, enriching the event's metadata.
-4.  **Publish** the newly ranked events as `ranked.events` to a NATS stream for consumption by other services.
+Its primary responsibilities are:
+1.  **Consume** `filtered.events` from the NATS JetStream, which are published by the [`filter` service](./filter.md).
+2.  **Calculate Scores**: For each event, it computes three distinct scores:
+    *   `importance_score`: Based on the event's categories.
+    *   `recency_score`: Based on the event's timestamp using an exponential decay model.
+    *   `final_score`: A configurable weighted average of the importance and recency scores.
+3.  **Enrich Data**: It persists these three scores back into the event's record in the Qdrant vector database.
+4.  **Publish Ranked Events**: It publishes a new `RankedEvent` message, containing the original event data plus the new scores, to the `ranked.events` NATS subject for consumption by downstream services like the [`inspector`](./inspector.md).
 
-## Core Functionality: Balancing Importance and Recency
+## 2. Core Functionality: The Scoring Algorithm
 
-The `ranker` service employs a configurable algorithmic approach to assign a `final_score` to each news event. This score is a weighted combination of two key factors:
+The `ranker` employs a deterministic, configurable algorithm to assign a `final_score`. This score is a weighted combination of two key factors, allowing for fine-tuned control over what content is prioritized.
 
-### 1. Importance Score
+### Importance Score
 
-The importance of an event is determined by its categories, which are assigned by the `filter` service using an LLM. The `ranker` service uses a predefined mapping of categories to numerical importance values, configured in `ranker_config.yaml`. This allows for flexible tuning of what topics are considered more "important" to the target audience (e.g., an IT manager).
+The importance of an event is a proxy for its relevance to the target audience. This is determined by the event's categories (assigned by the `filter` service). The `ranker_config.yaml` file maps specific categories to numerical importance values.
 
 **Example Configuration (`ranker_config.yaml`):**
 ```yaml
@@ -25,30 +28,23 @@ category_importance_scores:
   Cloud Computing: 0.9
   Network Infrastructure: 0.8
   Software Development: 0.7
-  Data Management: 0.6
-  IT Strategy: 0.5
-  Compliance: 0.4
   Other: 0.1
 ```
 
-The `calculate_importance_score` function sums the importance values of all categories associated with an event.
+### Recency Score
 
-### 2. Recency Score
-
-The recency of an event reflects how recently it was published or updated. The `ranker` service applies an exponential decay function to the event's timestamp to calculate its recency score. This ensures that newer events are generally ranked higher, but older, highly important events can still maintain relevance.
+To ensure the newsfeed is timely, the `ranker` applies an exponential decay function to the event's timestamp. This means newer events are ranked higher, while older events gradually lose their value over time.
 
 **Example Configuration (`ranker_config.yaml`):**
 ```yaml
 recency_decay:
-  half_life_hours: 72 # Event loses half its recency score every 72 hours
-  max_score: 100.0 # Max score for a brand new event
+  half_life_hours: 72 # An event's recency score is halved every 3 days.
+  max_score: 100.0    # The score for a brand-new event.
 ```
 
-The `calculate_recency_score` function uses the `half_life_hours` to determine the decay rate, ensuring that events gradually lose their recency value over time.
+### Final Score Calculation
 
-### 3. Final Score Calculation
-
-The `final_score` is a weighted sum of the `importance_score` and `recency_score`. The weights are also configurable, allowing administrators to prioritize either the inherent importance of a topic or its freshness.
+The `final_score` is a weighted sum of the two scores above. The weights are also configurable, allowing administrators to prioritize either the inherent importance of a topic or its freshness.
 
 **Example Configuration (`ranker_config.yaml`):**
 ```yaml
@@ -60,22 +56,35 @@ ranking_parameters:
 **Formula:**
 `final_score = (importance_weight * importance_score) + (recency_weight * recency_score)`
 
-## Why YAML Configuration?
+## 3. Design Principle: Configuration-Driven Logic
 
-The use of a dedicated `ranker_config.yaml` file is a deliberate design choice that offers several significant advantages:
+The use of a dedicated `ranker_config.yaml` file is a core design principle that provides significant advantages:
 
-*   **Flexibility and Agnosticism**: By externalizing ranking parameters, the `ranker` service remains generic and not hardcoded to a specific domain (e.g., IT news). It can be easily reconfigured for finance, healthcare, or any other domain by simply updating the YAML file with new category importance scores and decay parameters.
-*   **Tunability by Non-Developers**: Business users, data scientists, or product managers can easily adjust ranking weights, category importance, and recency decay without requiring code changes or redeployments.
-*   **Separation of Concerns**: It cleanly separates the ranking logic from its specific parameters, leading to more maintainable and readable code.
-*   **A/B Testing**: Different ranking strategies can be A/B tested by deploying instances of the `ranker` service with different `ranker_config.yaml` files.
+*   **Tunability**: Business users or data scientists can easily adjust ranking parameters to meet changing priorities without requiring code changes or redeployments.
+*   **Flexibility**: The service is domain-agnostic. It can be reconfigured for any subject (e.g., finance, healthcare) by simply updating the category scores and decay parameters in the YAML file.
+*   **Separation of Concerns**: It cleanly separates the stable ranking algorithm from its volatile parameters, leading to more maintainable and readable code.
+*   **Rapid Experimentation**: Different ranking strategies can be A/B tested by deploying `ranker` instances with different configurations.
 
-## Technical Deep Dive
+## 4. Published Message Contract: `RankedEvent`
 
-The `ranker` service is implemented as a Python microservice, leveraging `asyncio` for asynchronous operations and NATS JetStream for efficient event processing.
+When the `ranker` finishes processing, it publishes a `RankedEvent` protobuf message to the `ranked.events` subject. Downstream services can rely on this contract.
 
-### Data Flow and Processing Sequence
+**Fields:**
+- `id` (string)
+- `title` (string)
+- `timestamp` (string)
+- `source` (string)
+- `categories` (repeated string)
+- `is_relevant` (bool)
+- `importance_score` (float)
+- `recency_score` (float)
+- `final_score` (float)
 
-The following sequence diagram illustrates how an event flows from the `filter` service through the `ranker` service:
+## 5. Technical Deep Dive
+
+### Data Flow Diagram
+
+The following diagram illustrates how an event flows through the `ranker` service:
 
 ```mermaid
 sequenceDiagram
@@ -84,52 +93,24 @@ sequenceDiagram
     participant Ranker as Ranker Service
     participant Qdrant as Qdrant DB
 
-    Filter->>NATS: Publish filtered.events (FilteredEvent Protobuf)
-    NATS-->>Ranker: filtered.events message
-    Ranker->>Ranker: Parse FilteredEvent Protobuf
-    Ranker->>Ranker: Calculate importance_score (using ranker_config.yaml)
-    Ranker->>Ranker: Calculate recency_score (using ranker_config.yaml)
-    Ranker->>Ranker: Calculate final_score (weighted sum)
-    Ranker->>Qdrant: Retrieve full event payload by ID
-    Qdrant-->>Ranker: Event payload
-    Ranker->>Qdrant: Upsert event payload with new scores (importance, recency, final)
+    Filter->>NATS: Publish filtered.events
+    NATS-->>Ranker: Consume filtered.events message
+    Ranker->>Ranker: Calculate importance, recency, and final scores
+    Ranker->>Qdrant: Retrieve event payload by ID
+    Qdrant-->>Ranker: Return event payload
+    Ranker->>Qdrant: Upsert event with new scores
     Qdrant-->>Ranker: Acknowledge upsert
-    Ranker->>Ranker: Construct RankedEvent Protobuf
-    Ranker->>NATS: Publish ranked.events (RankedEvent Protobuf)
+    Ranker->>NATS: Publish ranked.events
     Ranker->>NATS: Acknowledge filtered.events message
 ```
 
-### Internal Logic Flow
-
-The internal processing of a `filtered.events` message within the `ranker` service follows these steps:
-
-flowchart TD
-    A["Start: Receive filtered.events message"] --> B{"Parse FilteredEvent Protobuf"}
-    B --> C["Extract Event Content, Categories, Timestamp"]
-    C --> D["Calculate Importance Score"]
-    D --> E["Calculate Recency Score"]
-    E --> F["Calculate Final Score"]
-    F --> G{"Retrieve Event from Qdrant"}
-    G -->|Event Found| H["Update Event Payload with Scores"]
-    G -->|Event Not Found| I["Log Warning: Event not in Qdrant"]
-    H --> J["Upsert Updated Event to Qdrant"]
-    J --> K["Construct RankedEvent Protobuf"]
-    K --> L["Publish RankedEvent to NATS"]
-    L --> M["Acknowledge filtered.events message"]
-    M --> N["End"]
-    I --> N
-
-
 ### Key Components and Dependencies
 
-*   **NATS JetStream**: Used for asynchronous message passing between services (`filtered.events` subscription, `ranked.events` publication).
-*   **Qdrant**: The vector database where event metadata, embeddings, and now ranking scores are stored and updated.
-*   **`src/lib_py/middlewares/JetStreamEventSubscriber`**: Handles subscribing to NATS streams.
-*   **`src/lib_py/middlewares/JetStreamPublisher`**: Handles publishing messages to NATS streams.
-*   **`src/lib_py/middlewares/ReadinessProbe`**: Ensures the service's health can be monitored.
-*   **`src/lib_py/logic/QdrantLogic`**: Provides an abstraction layer for interacting with Qdrant, including upserting event data.
-*   **`src/lib_py/gen_types/filtered_event_pb2`**: Protobuf definition for incoming filtered events.
-*   **`src/lib_py/gen_types/ranked_event_pb2`**: Protobuf definition for outgoing ranked events.
+*   **NATS JetStream**: For asynchronous message passing (`filtered.events` subscription, `ranked.events` publication).
+*   **Qdrant**: The vector database where event metadata and scores are stored.
+*   **`src/lib_py/middlewares/JetStreamEventSubscriber`**: Handles subscribing to NATS.
+*   **`src/lib_py/middlewares/JetStreamPublisher`**: Handles publishing to NATS.
+*   **`src/lib_py/middlewares/ReadinessProbe`**: Exposes a health check endpoint.
+*   **`src/lib_py/logic/QdrantLogic`**: Provides an abstraction layer for interacting with Qdrant.
+*   **`src/lib_py/gen_types/`**: Contains the Protobuf definitions for `FilteredEvent` (input) and `RankedEvent` (output).
 *   **`PyYAML`**: Used for loading the `ranker_config.yaml` file.
-
-This comprehensive overview should provide a clear understanding of the `ranker` service's role, its internal workings, and its configurable nature within the Sentinel AI platform.

@@ -1,0 +1,26 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# DockerfileNATS
+# ──────────────────────────────────────────────────────────────────────────────
+
+# We build a custom image because the official nats:latest is a minimal binary-only
+# image without a shell or curl, which we need for the healthcheck.
+# Stage 1: grab the official nats-server binary
+FROM nats:latest AS nats-binary
+
+# Stage 2: build an Alpine-based image with curl
+FROM alpine:3.18
+
+RUN apk add --no-cache curl ca-certificates \
+    && addgroup -S nats \
+    && adduser -S -G nats nats \
+    && mkdir -p /data/nats /etc/nats \
+    && chown -R nats:nats /data /etc/nats
+
+COPY --from=nats-binary /nats-server /usr/local/bin/nats-server
+
+USER nats
+
+EXPOSE 4222 8222
+
+ENTRYPOINT ["/usr/local/bin/nats-server"]
+CMD ["--name=nats", "--http_port=8222", "--js", "--sd=/data/nats"]

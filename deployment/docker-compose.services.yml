@@ -38,12 +38,12 @@ services:
         condition: service_started
       qdrant:
         condition: service_started
-#    healthcheck:
-#      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
-#      interval: 60s
-#      start_period: 10s
-#      timeout: 3s
-#      retries: 3
+    healthcheck:
+      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
+      interval: 60s
+      start_period: 10s
+      timeout: 3s
+      retries: 3
 #    labels:
 #      - "traefik.enable=true"
 #      # 1) Match requests to localhost + /api
@@ -286,39 +286,50 @@ services:
         --server.port    $STREAMLIT_SERVER_PORT"
     depends_on:
       api:
-        condition: service_started
-#    labels:
-#      - "traefik.enable=true"
-#      - "traefik.http.routers.web.rule=Host(`localhost`) && PathPrefix(`/web`)"
-#      - "traefik.http.routers.web.entrypoints=web"
-#      - "traefik.http.routers.web.middlewares=web-stripprefix"
-#      - "traefik.http.middlewares.web-stripprefix.stripprefix.prefixes=/web"
-#      - "traefik.http.services.web.loadbalancer.server.port=8501"
-#    healthcheck:
-#      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
-#      interval: 60s
-#      start_period: 10s
-#      timeout: 3s
-#      retries: 3
+        condition: service_healthy
 
+
+
+#  nats:
+#    image: nats:latest
+#    container_name: sentinel-nats
+#    ports:
+#      - "4222:4222"
+#      - "8222:8222" # Monitoring port
+#    volumes:
+#      - nats-data:/data/nats
+#    command:
+#      - "--name=nats"
+#      - "--http_port=8222"
+#      - "--js"
+#      - "--sd=/data/nats"
+#
+#    restart: unless-stopped
+#    networks:
+#      - sentinel-backend-network
 
   nats:
-    image: nats:latest
+    image: sentinel-nats:custom
+    build:
+      context: .
+      dockerfile: Dockerfile.nats
     container_name: sentinel-nats
     ports:
       - "4222:4222"
-      - "8222:8222" # Monitoring port
+      - "8222:8222"   # Monitoring / health endpoint
     volumes:
       - nats-data:/data/nats
-    command:
-      - "--name=nats"
-      - "--http_port=8222"
-      - "--js"
-      - "--sd=/data/nats"
-
     restart: unless-stopped
     networks:
       - sentinel-backend-network
+    healthcheck:
+      test: [ "CMD", "curl", "-sSf", "http://127.0.0.1:8222/varz" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+
 
   nats-dashboard:
     image: mdawar/nats-dashboard

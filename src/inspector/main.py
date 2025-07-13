@@ -25,8 +25,9 @@ except ImportError:
 
 from src.lib_py.middlewares.jetstream_event_subscriber import JetStreamEventSubscriber
 from src.lib_py.middlewares.readiness_probe import ReadinessProbe
-from src.lib_py.gen_types import filtered_event_pb2
+from src.lib_py.gen_types import ranked_event_pb2
 from src.lib_py.logic.qdrant_logic import QdrantLogic
+# from src.lib_py.logic.anomaly_logic import AnomalyLogic
 
 # Load environment variables
 load_dotenv()
@@ -57,8 +58,8 @@ QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "news_events")
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 
 # NATS Stream configuration
-FILTERED_EVENTS_STREAM_NAME = "filtered-events-stream"
-FILTERED_EVENTS_SUBJECT = "filtered.events"
+RANKED_EVENTS_STREAM_NAME = "ranked-events-stream"
+RANKED_EVENTS_SUBJECT = "ranked.events"
 
 qdrant_logic: QdrantLogic = None
 llm_client = None
@@ -148,34 +149,64 @@ async def check_for_anomalies(event_data: dict) -> bool:
 
     return False
 
-async def filtered_event_handler(msg: Msg):
+# Future-proofing and Extensibility Note:
+# The RankedEvent message received from the 'ranker' service contains three distinct scores:
+# 1. importance_score: Based on the event's category (e.g., 'cybersecurity' is high).
+# 2. recency_score: Based on how recently the event occurred.
+# 3. final_score: A weighted combination of the importance and recency scores.
+#
+# Currently, the inspector's anomaly detection rules (defined in inspector_config.yaml)
+# are focused on the content and structure of the event (e.g., keyword matches, content length,
+# missing fields, LLM-based analysis). Therefore, these scores are not actively used in the
+# anomaly detection logic itself, although the final_score is logged for visibility.
+#
+# However, all three scores are passed to the inspector to make the system extensible.
+# Future anomaly detection rules could easily leverage these scores for more sophisticated checks,
+# for example:
+#   - A "Critical Event" rule that flags events with an importance_score > 0.9.
+#   - A "Stale News" rule that flags events with a very low recency_score.
+#   - A "Score Mismatch" rule that checks for inconsistencies, like a high final_score
+#     for an event with very short content.
+#
+# By including these fields now, we can add such rules in the future simply by modifying
+# the configuration, without needing to change the data pipeline between services.
+async def ranked_event_handler(msg: Msg):
     readiness_probe.update_last_seen()
     try:
-        filtered_event = filtered_event_pb2.FilteredEvent()
-        filtered_event.ParseFromString(msg.data)
-        logger.info(f"✉️ Received filtered event: ID={filtered_event.id}, Title='{filtered_event.title}'")
+        ranked_event = ranked_event_pb2.RankedEvent()
+        ranked_event.ParseFromString(msg.data)
+        logger.info(f"✉️ Received ranked event: ID={ranked_event.id}, Title='{ranked_event.title}', Score={ranked_event.final_score:.2f}")
 
-        event_data = await qdrant_logic.retrieve_event_by_id(filtered_event.id)
+        event_data = await qdrant_logic.retrieve_event_by_id(ranked_event.id)
         if not event_data:
-            logger.warning(f"⚠️ Event '{filtered_event.id}' not found in Qdrant. Cannot perform inspection.")
+            logger.warning(f"⚠️ Event '{ranked_event.id}' not found in Qdrant. Cannot perform inspection.")
             await msg.ack()
             return
+
+        logger.debug(f"Event data from Qdrant (before score): {event_data}")
+
+        # Add the score from the message to the event data, as it's not stored in Qdrant
+        event_data['score'] = ranked_event.final_score
+
+        logger.debug(f"Event data (after score): {event_data}")
 
         is_anomaly = await check_for_anomalies(event_data)
 
         if is_anomaly:
             event_data['is_anomaly'] = True
-            logger.info(f"🚩 Event '{filtered_event.id}' flagged as an anomaly. Updating in Qdrant.")
+            logger.info(f"🏴‍☠️ Event '{ranked_event.id}' flagged as an anomaly. Updating in Qdrant.")
             success = await qdrant_logic.upsert_event(event_data)
             if not success:
-                logger.error(f"❌ Failed to update event '{filtered_event.id}' in Qdrant.")
-
-            logger.info(f"🚩 Event '{filtered_event.id}' flagged as an anomaly in Qdrant.")
+                logger.error(f"❌ Failed to update event '{ranked_event.id}' in Qdrant.")
+            else:
+                logger.info(f"✅ Successfully updated event '{ranked_event.id}' in Qdrant with anomaly flag.")
+        else:
+            logger.info(f"👌 Event '{ranked_event.id}' passed inspection. No anomalies found.")
 
         await msg.ack()
-        logger.info(f"✅ Acknowledged filtered event: {filtered_event.id}")
+        logger.info(f"✅ Acknowledged ranked event: {ranked_event.id}")
     except Exception as e:
-        logger.error(f"❌ Error processing filtered event: {e}")
+        logger.error(f"❌ Error processing ranked event: {e}", exc_info=True)
         await msg.nak()  # Negative acknowledgment
 
 async def main():
@@ -223,22 +254,22 @@ async def main():
             logger.info(f"✅ LLM Client initialized for anomaly detection with provider: {provider} and model: {model_name}")
             break # Only one LLM client needed
 
-    filtered_events_subscriber = JetStreamEventSubscriber(
+    ranked_events_subscriber = JetStreamEventSubscriber(
         nats_url=NATS_URL,
-        stream_name=FILTERED_EVENTS_STREAM_NAME,
-        subject=FILTERED_EVENTS_SUBJECT,
+        stream_name=RANKED_EVENTS_STREAM_NAME,
+        subject=RANKED_EVENTS_SUBJECT,
         connect_timeout=NATS_CONNECT_TIMEOUT,
         reconnect_time_wait=NATS_RECONNECT_TIME_WAIT,
         max_reconnect_attempts=NATS_MAX_RECONNECT_ATTEMPTS,
         ack_wait=60,  # seconds
         max_deliver=3,
-        proto_message_type=filtered_event_pb2.FilteredEvent
+        proto_message_type=ranked_event_pb2.RankedEvent
     )
-    filtered_events_subscriber.set_event_handler(filtered_event_handler)
+    ranked_events_subscriber.set_event_handler(ranked_event_handler)
 
     try:
-        await filtered_events_subscriber.connect_and_subscribe()
-        logger.info(f"✅ Subscribed to {FILTERED_EVENTS_SUBJECT}")
+        await ranked_events_subscriber.connect_and_subscribe()
+        logger.info(f"✅ Subscribed to {RANKED_EVENTS_SUBJECT}")
     except Exception as e:
         logger.error(f"❌ Failed to connect or subscribe to NATS: {e}")
         return
@@ -250,7 +281,7 @@ async def main():
     except asyncio.CancelledError:
         logger.info("🛑 Inspector service received shutdown signal.")
     finally:
-        await filtered_events_subscriber.close()
+        await ranked_events_subscriber.close()
         logger.info("✅ NATS connections closed.")
 
 if __name__ == "__main__":

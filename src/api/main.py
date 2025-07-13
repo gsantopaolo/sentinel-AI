@@ -17,6 +17,7 @@ from src.lib_py.middlewares.readiness_probe import ReadinessProbe
 from src.lib_py.gen_types import raw_event_pb2, new_source_pb2, removed_source_pb2
 from src.lib_py.logic.source_logic import SourceLogic
 from src.lib_py.logic.qdrant_logic import QdrantLogic
+from src.lib_py.models.qdrant_models import EventPayload
 
 # ————— Environment & Logging —————
 load_dotenv()
@@ -138,6 +139,10 @@ class Event(BaseModel):
     title: str
     content: str
     published_at: datetime
+
+class ReRankRequest(BaseModel):
+    query: str
+    limit: Optional[int] = 10
 
 class SourceBase(BaseModel):
     name: str
@@ -314,6 +319,41 @@ async def delete_source(source_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"❌ Publishing removed.source id={source_id} failed: {e}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+# ————— News Retrieval Endpoints —————
+
+@app.get("/news/ranked", response_model=List[EventPayload], status_code=status.HTTP_200_OK)
+async def get_ranked_news(limit: int = 20, offset: int = 0):
+    logger.info(f"📱 GET /news/ranked (limit={limit}, offset={offset})")
+    try:
+        events, _ = await qdrant_logic.list_ranked_events(limit=limit, offset=offset)
+        logger.info(f"🗄️ Returning {len(events)} ranked events.")
+        return events
+    except Exception as e:
+        logger.error(f"❌ Error retrieving ranked news from Qdrant: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve ranked news.")
+
+@app.get("/news/filtered", response_model=List[EventPayload], status_code=status.HTTP_200_OK)
+async def get_filtered_news(limit: int = 20, offset: int = 0):
+    logger.info(f"📱 GET /news/filtered (limit={limit}, offset={offset})")
+    try:
+        events, _ = await qdrant_logic.list_filtered_events(limit=limit, offset=offset)
+        logger.info(f"🗄️ Returning {len(events)} filtered events.")
+        return events
+    except Exception as e:
+        logger.error(f"❌ Error retrieving filtered news from Qdrant: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve filtered news.")
+
+@app.post("/news/rerank", response_model=List[EventPayload], status_code=status.HTTP_200_OK)
+async def rerank_news(payload: ReRankRequest):
+    logger.info(f"📱 POST /news/rerank with query: '{payload.query}'")
+    try:
+        events = await qdrant_logic.search_events_by_keyword(query=payload.query, limit=payload.limit)
+        logger.info(f"🗄️ Returning {len(events)} reranked events for query '{payload.query}'.")
+        return events
+    except Exception as e:
+        logger.error(f"❌ Error reranking news in Qdrant: {e}")
+        raise HTTPException(status_code=500, detail="Failed to rerank news.")
 
 @app.get("/retrieve", status_code=status.HTTP_200_OK)
 async def retrieve_data(batch_id: str):
