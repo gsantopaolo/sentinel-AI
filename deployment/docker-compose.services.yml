@@ -33,9 +33,9 @@ services:
 #      - sentinel-frontend-network # For Traefik exposure
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
       qdrant:
         condition: service_started
     healthcheck:
@@ -78,9 +78,9 @@ services:
       - sentinel-backend-network
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
       qdrant:
         condition: service_started
     healthcheck:
@@ -118,9 +118,9 @@ services:
       - sentinel-backend-network
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
       qdrant:
         condition: service_started
     healthcheck:
@@ -154,9 +154,9 @@ services:
       - sentinel-backend-network
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
       qdrant:
         condition: service_started
     healthcheck:
@@ -194,9 +194,9 @@ services:
       - sentinel-backend-network
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
       qdrant:
         condition: service_started
 #    healthcheck:
@@ -225,9 +225,9 @@ services:
       - sentinel-backend-network
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
       interval: 60s
@@ -254,7 +254,7 @@ services:
       - sentinel-backend-network
     depends_on:
       nats:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
       interval: 60s
@@ -309,10 +309,10 @@ services:
 #      - sentinel-backend-network
 
   nats:
-    image: sentinel-nats:custom
+    image: sentinel-nats:latest
     build:
       context: .
-      dockerfile: Dockerfile.nats
+      dockerfile: DockerfileNATS
     container_name: sentinel-nats
     ports:
       - "4222:4222"
@@ -328,8 +328,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-
-
 
   nats-dashboard:
     image: mdawar/nats-dashboard
@@ -358,6 +356,12 @@ services:
     restart: unless-stopped
     networks:
       - sentinel-backend-network
+#    healthcheck:
+#      test: ["CMD-SHELL", "echo > /dev/tcp/127.0.0.1/6333 || exit 1"]
+#      interval: 30s
+#      timeout: 5s
+#      retries: 5
+#      start_period: 10s
 
   postgres:
     image: postgres:16
