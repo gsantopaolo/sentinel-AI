@@ -87,6 +87,8 @@ The very first run downloads base images and builds all containers, so it can ta
 ```bash
 sudo deployment/stop.sh
 ```
+> Having issues? Check container logs in Portainer or run `docker compose logs -f <service>`.
+---
 
 ### 4. Monitoring & troubleshooting
 
@@ -118,13 +120,6 @@ python main.py
 
 Make sure Docker Compose is already running NATS, Postgres, and Qdrant (or point the env vars to your own instances).
 
----
-
-> check out [my blog](https://genmind.ch)
-
-> Powered by ❤️ for intelligent, AI-driven insights!
-
----
 
 ## ⚠️ Known Issues and Future Improvements
 
@@ -154,4 +149,10 @@ Make sure Docker Compose is already running NATS, Postgres, and Qdrant (or point
 
 ---
 
-> Having issues? Check container logs in Portainer or run `docker compose logs -f <service>`.
+
+
+> check out [my blog](https://genmind.ch)
+
+> Powered by ❤️ for intelligent, AI-driven insights!
+
+---

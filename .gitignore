@@ -213,3 +213,5 @@ deployment/data
 .idea/
 
 server.txt
+/deployment/Users/
+/deployment/servers.json/
