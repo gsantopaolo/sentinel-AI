@@ -26,8 +26,8 @@ The **Ingest Data** page provides a form for manually submitting a new raw event
 ### 3. News Feeds
 The UI provides several views for monitoring events:
 *   **All News**: Displays all events retrieved from the database.
-*   **Filtered News**: Shows events that have been processed and deemed relevant by the `filter` service.
-*   **Ranked News**: Presents events with their calculated importance, recency, and final scores from the `ranker` service.
+*   **Filtered News**: Shows events that have been processed and deemed relevant by the `filter` service. **Note:** if the `ranker` service is running, relevant events are promoted to *Ranked News* almost instantly, so this view may appear empty. Stop the Ranker service and ingest a new event to observe items here.
+*   **Ranked News**: Presents events with their calculated importance, recency, and final scores from the `ranker` service. **Note:** this view will only populate when the Ranker service is running and has processed events. If the Ranker is stopped, this table remains empty until it is restarted and new events flow through.
 
 ### 4. Interactive Reranking
 The **Rerank News** page allows users to dynamically adjust the weights for importance and recency and immediately see the impact on the event rankings. This is useful for tuning the ranking algorithm.

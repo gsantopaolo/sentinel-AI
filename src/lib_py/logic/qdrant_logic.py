@@ -37,105 +37,149 @@ class QdrantLogic:
         self.logger = logging.getLogger(__name__)
         self.logger.info(f"🗄️ Initializing QdrantLogic for collection '{collection_name}' with model '{embedding_model_name}'")
 
-    def ensure_collection_exists(self) -> None:
-        """Ensure the specified collection exists with proper configuration.
-
-        If the collection already exists, it will be deleted and recreated to ensure
-        it matches the current model's vector configuration. This is a robust
-        approach to prevent configuration mismatch errors.
-
-        Raises:
-            RuntimeError: If there's an error creating or verifying the collection.
-        """
-        self.logger.info(f"🔍 Ensuring collection '{self.collection_name}' is correctly configured...")
+        # Ensure the collection and its indexes exist (final_score, timestamp, content)
         try:
-            if self.client.collection_exists(collection_name=self.collection_name):
-                self.logger.warning(
-                    f"🗑️ Collection '{self.collection_name}' already exists. "
-                    f"Recreating it to ensure vector configuration is up-to-date."
-                )
-                self.client.delete_collection(collection_name=self.collection_name)
+            self.initialize_collection()
+        except Exception as e:
+            # Do not fail hard on startup; log and continue. Queries that rely on missing indexes
+            # will be handled gracefully by sorting client-side.
+            self.logger.warning(f"⚠️ Could not verify/create collection indexes: {e}")
 
-            self.logger.info(f"🆕 Creating collection '{self.collection_name}' with vector size {self.vector_size}")
-            self.client.create_collection(
-                collection_name=self.collection_name,
-                vectors_config=models.VectorParams(
-                    size=self.vector_size,
-                    distance=models.Distance.COSINE
+    def initialize_collection(self) -> None:
+        try:
+            # Create collection if it does not exist
+            if not self.client.collection_exists(collection_name=self.collection_name):
+                self.logger.info(f"Collection '{self.collection_name}' not found. Creating collection.")
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=models.VectorParams(size=self.vector_size, distance=models.Distance.COSINE),
                 )
-            )
-            self._create_collection_indexes()
-            self.logger.info(f"✅ Successfully created and configured collection '{self.collection_name}'")
+                self.logger.info(f"Collection '{self.collection_name}' created successfully.")
+
+            # Get existing collection info to check for indexes
+            collection_info = self.client.get_collection(collection_name=self.collection_name)
+            existing_indexes = set(collection_info.payload_schema.keys())
+            self.logger.debug(f"Existing payload indexes: {existing_indexes}")
+
+            # Define required indexes
+            required_indexes = {
+                "final_score": models.PayloadSchemaType.FLOAT,
+                "timestamp": models.PayloadSchemaType.DATETIME,
+                "content": qdrant_models.TextIndexParams(
+                    type=qdrant_models.TextIndexType.TEXT,
+                    tokenizer=qdrant_models.TokenizerType.WHITESPACE,
+                    min_token_len=2,
+                    max_token_len=20,
+                    lowercase=True
+                )
+            }
+
+            # Create any missing indexes
+            for field_name, field_schema in required_indexes.items():
+                if field_name not in existing_indexes:
+                    self.logger.info(f"Index for '{field_name}' not found. Creating and waiting for completion...")
+                    self.client.create_payload_index(
+                        collection_name=self.collection_name,
+                        field_name=field_name,
+                        field_schema=field_schema,
+                        wait=True,  # Wait for the index to be ready
+                    )
+                    self.logger.info(f"✅ Index for '{field_name}' is ready.")
+            self.logger.info("✅ All required indexes are present.")
 
         except Exception as e:
-            error_msg = f"❌ Failed to ensure collection '{self.collection_name}' exists: {str(e)}"
-            self.logger.error(error_msg, exc_info=True)
-            raise RuntimeError(error_msg) from e
+            self.logger.error(f"❌ Failed to initialize collection: {e}", exc_info=True)
+            raise
 
-    async def list_filtered_events(self, limit: int = 20, offset: int = 0):
-        """List events that are marked as relevant but not yet ranked."""
-        self.logger.info(f"📋 Listing filtered events (limit={limit}, offset={offset})")
+    async def list_filtered_events(self) -> List[Dict[str, Any]]:
+        """List ALL events that are marked as relevant but not yet ranked."""
+        self.logger.info("📋 Listing all filtered events with full pagination.")
         try:
-            loop = asyncio.get_event_loop()
-            records, next_page = await loop.run_in_executor(
+            loop = asyncio.get_running_loop()
+            all_records = []
+            next_offset = None
+
+            while True:
+                records, next_offset = await loop.run_in_executor(
+                    None,
+                    lambda: self.client.scroll(
+                        collection_name=self.collection_name,
+                        scroll_filter=models.Filter(
+                            must=[
+                                models.FieldCondition(key="is_relevant", match=models.MatchValue(value=True)),
+                                models.IsEmptyCondition(is_empty=models.PayloadField(key="final_score")),
+                            ]
+                        ),
+                        limit=250,  # Fetch in batches of 250
+                        offset=next_offset,
+                        with_payload=True
+                    )
+                )
+                all_records.extend(records)
+                if next_offset is None:
+                    break
+
+            payloads = [r.payload for r in all_records]
+            # Sort by timestamp descending in application code
+            def _ts_val(p):
+                ts = p.get("timestamp")
+                if ts is None:
+                    return 0
+                if isinstance(ts, (int, float)):
+                    return ts
+                # assume ISO8601 string
+                try:
+                    from datetime import datetime
+                    return datetime.fromisoformat(ts).timestamp()
+                except Exception:
+                    return 0
+            payloads.sort(key=_ts_val, reverse=True)
+            self.logger.info(f"✅ Found {len(payloads)} filtered events in total.")
+            return payloads
+        except Exception as e:
+            self.logger.error(f"❌ Failed to list filtered events: {e}", exc_info=True)
+            raise RuntimeError("Failed to list filtered events") from e
+
+    async def list_ranked_events(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """List events that have a final_score (i.e., are ranked)."""
+        self.logger.info(f"📋 Listing ranked events (limit={limit})")
+        try:
+            loop = asyncio.get_running_loop()
+            records, _ = await loop.run_in_executor(
                 None,
                 lambda: self.client.scroll(
                     collection_name=self.collection_name,
                     scroll_filter=models.Filter(
                         must=[
-                            models.FieldCondition(key="is_relevant", match=models.MatchValue(value=True)),
-                            # Must NOT have a final_score
-                            models.IsEmptyCondition(is_empty=models.PayloadField(key="final_score"))
+                            models.FieldCondition(key="final_score", range=models.Range(gte=0))
                         ]
                     ),
                     limit=limit,
-                    offset=offset,
-                    with_payload=True,
-                    order_by=models.OrderBy(key="timestamp", direction=models.OrderDirection.DESC)
+                    with_payload=True
+                    # order_by removed — we will sort client-side to avoid index issues
                 )
             )
-            return [r.payload for r in records], next_page
-        except Exception as e:
-            self.logger.error(f"❌ Failed to list filtered events: {e}", exc_info=True)
-            raise RuntimeError("Failed to list filtered events") from e
-
-    async def list_ranked_events(self, limit: int = 20, offset: int = 0):
-        """List events that have been ranked, ordered by final_score."""
-        self.logger.info(f"📋 Listing ranked events (limit={limit}, offset={offset})")
-        try:
-            loop = asyncio.get_event_loop()
-            records, next_page = await loop.run_in_executor(
-                None,
-                lambda: self.client.scroll(
-                    collection_name=self.collection_name,
-                    scroll_filter=models.Filter(
-                        must_not=[
-                            # Must have a final_score
-                            models.IsEmptyCondition(is_empty=models.PayloadField(key="final_score"))
-                        ]
-                    ),
-                    limit=limit,
-                    offset=offset,
-                    with_payload=True,
-                    order_by=models.OrderBy(key="final_score", direction=models.OrderDirection.DESC)
-                )
-            )
-            return [r.payload for r in records], next_page
+            payloads = [r.payload for r in records]
+            # Ensure deterministic ordering by final_score descending
+            payloads.sort(key=lambda p: p.get("final_score", 0), reverse=True)
+            self.logger.info(f"✅ Found {len(payloads)} ranked events.")
+            return payloads
         except Exception as e:
             self.logger.error(f"❌ Failed to list ranked events: {e}", exc_info=True)
             raise RuntimeError("Failed to list ranked events") from e
 
-    async def search_events_by_keyword(self, query: str, limit: int = 10):
-        """Search for events using a full-text search on the content."""
+    async def search_events_by_keyword(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Search for events using a full-text search on the 'content' field."""
         self.logger.info(f"🔍 Keyword search for: '{query}'")
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             hits = await loop.run_in_executor(
                 None,
                 lambda: self.client.search(
                     collection_name=self.collection_name,
-                    query_text=query,  # This uses the new full-text index
+                    query_text=f"content:{query}",
                     limit=limit,
+                    with_payload=True,
                 )
             )
             return [hit.payload for hit in hits]
@@ -143,78 +187,32 @@ class QdrantLogic:
             self.logger.error(f"❌ Keyword search failed: {e}", exc_info=True)
             raise RuntimeError("Keyword search failed") from e
 
-    def search_events(
-            self,
-            query_text: str,
-            limit: int = 10,
-            offset: int = 0,
-            filters: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
-        """Search for events using semantic similarity to the query text.
-
-        Args:
-            query_text (str): The text to search for.
-            limit (int): Maximum number of results to return. Defaults to 10.
-            offset (int): Number of results to skip. Defaults to 0.
-            filters (Optional[Dict[str, Any]]): Optional filters to apply to the search.
-
-        Returns:
-            List[Dict[str, Any]]: List of search results with scores and payloads.
-
-        Raises:
-            RuntimeError: If there's an error during the search operation.
-        """
-        self.logger.info(f"🔍 Searching for: '{query_text[:50]}{'...' if len(query_text) > 50 else ''}'")
-
+    async def search_events_by_vector(self, query_text: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Search for events using semantic similarity to the query text."""
+        self.logger.info(f"🔍 Vector search for: '{query_text[:50]}...'" if len(query_text) > 50 else f"🔍 Vector search for: '{query_text}'")
         if not query_text or not query_text.strip():
             self.logger.warning("⚠️ Empty search query provided")
             return []
 
         try:
-            # Generate query embedding
-            query_embedding = self.model.encode(query_text).tolist()
+            loop = asyncio.get_running_loop()
+            query_embedding = await loop.run_in_executor(None, lambda: self.model.encode(query_text).tolist())
 
-            # Build filters if provided
-            qdrant_filters = None
-            if filters:
-                must_conditions = []
-                for key, value in filters.items():
-                    must_conditions.append(
-                        qdrant_models.FieldCondition(
-                            key=key,
-                            match=qdrant_models.MatchValue(value=value)
-                        )
-                    )
-                qdrant_filters = qdrant_models.Filter(must=must_conditions)
-
-            # Execute search
-            search_results = self.client.search(
-                collection_name=self.collection_name,
-                query_vector=query_embedding,
-                query_filter=qdrant_filters,
-                limit=limit,
-                offset=offset,
-                with_payload=True,
-                with_vectors=False
+            search_results = await loop.run_in_executor(
+                None,
+                lambda: self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_embedding,
+                    limit=limit,
+                    with_payload=True,
+                )
             )
-
-            # Format results
-            results = [
-                {
-                    "id": hit.id,
-                    "score": hit.score,
-                    "payload": hit.payload
-                }
-                for hit in search_results
-            ]
-
-            self.logger.info(f"✅ Found {len(results)} results")
+            results = [hit.payload for hit in search_results]
+            self.logger.info(f"✅ Found {len(results)} vector search results")
             return results
-
         except Exception as e:
-            error_msg = f"❌ Search failed: {str(e)}"
-            self.logger.error(error_msg)
-            raise RuntimeError(error_msg) from e
+            self.logger.error(f"❌ Vector search failed: {e}", exc_info=True)
+            raise RuntimeError("Vector search failed") from e
 
     async def retrieve_event_by_id(self, event_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a single event by its ID."""
@@ -225,25 +223,11 @@ class QdrantLogic:
         self.logger.info(f"🔍 Retrieving event ID: {event_id}")
 
         try:
-            loop = asyncio.get_event_loop()
-
-            # The scroll method returns a tuple: (list_of_records, next_page_offset)
-            records, _ = await loop.run_in_executor(
+            loop = asyncio.get_running_loop()
+            point_id = self._hash_id(str(event_id))
+            records = await loop.run_in_executor(
                 None,
-                lambda: self.client.scroll(
-                    collection_name=self.collection_name,
-                    scroll_filter=models.Filter(
-                        must=[
-                            models.FieldCondition(
-                                key="original_id",
-                                match=models.MatchValue(value=str(event_id))
-                            )
-                        ]
-                    ),
-                    limit=1,
-                    with_payload=True,
-                    with_vectors=False
-                )
+                lambda: self.client.retrieve(collection_name=self.collection_name, ids=[point_id], with_payload=True)
             )
 
             if not records:
@@ -259,18 +243,7 @@ class QdrantLogic:
             raise RuntimeError(error_msg) from e
 
     def get_all_events(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
-        """Retrieve all events from the collection with pagination.
-
-        Args:
-            limit (int): Maximum number of events to return. Defaults to 100.
-            offset (int): Number of events to skip. Defaults to 0.
-
-        Returns:
-            List[Dict[str, Any]]: List of event payloads.
-
-        Raises:
-            RuntimeError: If there's an error retrieving events.
-        """
+        """Retrieve all events from the collection with pagination."""
         self.logger.info(f"📋 Retrieving up to {limit} events (offset: {offset})")
 
         try:
@@ -292,62 +265,32 @@ class QdrantLogic:
             raise RuntimeError(error_msg) from e
 
     async def upsert_event(self, event_data: Dict[str, Any]) -> bool:
-        """Upsert an event into the Qdrant collection.
-
-        If an event with the same ID exists, it will be updated. Otherwise, a new event will be created.
-
-        Args:
-            event_data (Dict[str, Any]): The event data to upsert. Must contain 'id' and 'content'.
-
-        Returns:
-            bool: True if the operation was successful, False otherwise.
-
-        Raises:
-            ValueError: If required fields are missing.
-        """
+        """Upsert an event into the Qdrant collection."""
         event_id = event_data.get('id', 'N/A')
         self.logger.info(f"📥 Received upsert event: {event_id} (store entity inside the vector db)")
 
-        # Validate input
-        if not event_id or event_id == 'N/A':
-            error_msg = "Event data must contain a valid 'id' field"
-            self.logger.error(f"❌ {error_msg}")
-            return False
-
-        if "content" not in event_data:
-            error_msg = f"Event {event_id} missing 'content' field, cannot generate embedding"
-            self.logger.error(f"❌ {error_msg}")
+        if not event_id or event_id == 'N/A' or "content" not in event_data:
+            self.logger.error("❌ Event data must contain a valid 'id' and 'content' field")
             return False
 
         try:
-            # Generate embedding from content
+            loop = asyncio.get_running_loop()
             content = event_data["content"]
-            # Run the CPU-bound operation in a thread pool
-            loop = asyncio.get_event_loop()
-            embedding = await loop.run_in_executor(
-                None,
-                lambda: self.model.encode(content).tolist()
-            )
+            embedding = await loop.run_in_executor(None, lambda: self.model.encode(content).tolist())
 
-            # Create point structure with hashed ID
             point_id = self._hash_id(str(event_id))
             point = models.PointStruct(
                 id=point_id,
                 vector=embedding,
                 payload={
                     **event_data,
-                    "original_id": str(event_id)  # Ensure original_id is always a string
+                    "original_id": str(event_id)
                 }
             )
 
-            # Execute upsert in a thread since the Qdrant client is synchronous
             await loop.run_in_executor(
                 None,
-                lambda: self.client.upsert(
-                    collection_name=self.collection_name,
-                    points=[point],
-                    wait=True
-                )
+                lambda: self.client.upsert(collection_name=self.collection_name, points=[point], wait=True)
             )
 
             self.logger.info(f"✅ Successfully upserted event: {event_id}")
@@ -358,60 +301,40 @@ class QdrantLogic:
             return False
 
     async def delete_events(self, ids: List[str]) -> int:
-        """Delete multiple events by their original string IDs.
-
-        Args:
-            ids (List[str]): List of event IDs to delete.
-
-        Returns:
-            int: Number of events successfully deleted.
-
-        Raises:
-            ValueError: If no IDs are provided.
-            RuntimeError: If there's an error during deletion.
-        """
+        """Delete multiple events by their original string IDs."""
         if not ids:
             raise ValueError("No IDs provided for deletion")
 
         self.logger.info(f"🗑️ Deleting {len(ids)} events")
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
+            point_ids = [self._hash_id(str(id_)) for id_ in ids]
 
-            # Delete by filtering on the original_id field
-            operations = []
-            for id_ in ids:
-                operations.append(
-                    models.DeleteOperation(
-                        delete=models.PointsSelector(
-                            filter_=models.Filter(
-                                must=[
-                                    models.FieldCondition(
-                                        key="original_id",
-                                        match=models.MatchValue(value=str(id_))  # Ensure string comparison
-                                    )
-                                ]
-                            )
-                        )
-                    )
-                )
-
-            # Execute batch delete in a thread since the Qdrant client is synchronous
-            await loop.run_in_executor(
+            result = await loop.run_in_executor(
                 None,
-                lambda: self.client.batch(
+                lambda: self.client.delete(
                     collection_name=self.collection_name,
-                    operations=operations
+                    points_selector=models.PointIdsList(points=point_ids),
+                    wait=True
                 )
             )
 
-            self.logger.info(f"✅ Deleted {len(ids)} events")
-            return len(ids)
+            if result.status == qdrant_models.UpdateStatus.COMPLETED:
+                self.logger.info(f"✅ Successfully deleted {len(ids)} events")
+                return len(ids)
+            else:
+                self.logger.warning(f"⚠️ Deletion status: {result.status}")
+                return 0
 
         except Exception as e:
-            error_msg = f"❌ Failed to delete events: {str(e)}"
-            self.logger.error(error_msg, exc_info=True)
-            raise RuntimeError(error_msg) from e
+            self.logger.error(f"❌ Failed to delete events: {e}", exc_info=True)
+            raise RuntimeError("Failed to delete events") from e
+
+    def _hash_id(self, event_id: str) -> str:
+        """Create a consistent UUID from a string ID."""
+        hashed = hashlib.sha256(event_id.encode('utf-8')).hexdigest()
+        return f"{hashed[:8]}-{hashed[8:12]}-{hashed[12:16]}-{hashed[16:20]}-{hashed[20:32]}"
 
     def count_events(self) -> int:
         """Count the total number of events in the collection.
@@ -438,65 +361,3 @@ class QdrantLogic:
             error_msg = f"❌ Failed to count events: {str(e)}"
             self.logger.error(error_msg)
             raise RuntimeError(error_msg) from e
-
-    def _hash_id(self, id_str: str) -> int:
-        """Convert a string ID to a consistent positive integer hash for Qdrant.
-
-        Args:
-            id_str: The string ID to hash.
-
-        Returns:
-            int: A positive 63-bit integer hash of the input string.
-        """
-        # Use SHA-256 and take the first 8 bytes (64 bits) for the hash
-        hash_bytes = hashlib.sha256(id_str.encode('utf-8')).digest()[:8]
-        # Convert to a positive 63-bit integer to ensure it's within Qdrant's limits
-        return int.from_bytes(hash_bytes, byteorder='big') & 0x7FFFFFFFFFFFFFFF
-
-    def _create_collection_indexes(self):
-        """Create necessary indexes on the collection for better query performance.
-
-        This is an internal method called during collection creation.
-        """
-        try:
-            # Create index on the 'source' field for faster filtering
-            self.client.create_payload_index(
-                collection_name=self.collection_name,
-                field_name="source",
-                field_schema=models.PayloadSchemaType.KEYWORD
-            )
-            self.logger.info("✅ Created index on 'source' field")
-
-            # Index for sorting/filtering ranked events
-            self.client.create_payload_index(
-                collection_name=self.collection_name,
-                field_name="final_score",
-                field_schema=models.PayloadSchemaType.FLOAT
-            )
-            self.logger.info("✅ Created index on 'final_score' field")
-
-            # Index for sorting by timestamp
-            self.client.create_payload_index(
-                collection_name=self.collection_name,
-                field_name="timestamp",
-                field_schema=models.PayloadSchemaType.DATETIME
-            )
-            self.logger.info("✅ Created index on 'timestamp' field")
-
-            # Index for full-text search
-            self.client.create_payload_index(
-                collection_name=self.collection_name,
-                field_name="content",
-                field_schema=models.TextIndexParams(
-                    type="text",
-                    tokenizer=models.TokenizerType.WORD,
-                    min_token_len=2,
-                    max_token_len=15,
-                    lowercase=True
-                )
-            )
-            self.logger.info("✅ Created text index on 'content' field")
-
-            self.logger.info("✅ Created collection indexes")
-        except Exception as e:
-            self.logger.warning(f"Could not create payload index: {e}")

@@ -2,8 +2,10 @@ import os
 import json
 import logging
 import threading
+import asyncio
 from typing import List, Optional
 from datetime import datetime
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException, Response, status
 from pydantic import BaseModel, HttpUrl
@@ -40,7 +42,23 @@ ModelsBase.metadata.create_all(bind=engine)
 logger.info("✅ Database tables checked/created.")
 
 # ————— FastAPI & Dependency —————
-app = FastAPI()
+app = FastAPI(
+    title="Sentinel-AI API",
+    description="API for processing and retrieving AI-ranked news events.",
+    version="1.0.0",
+)
+
+qdrant_host = os.getenv("QDRANT_HOST", "qdrant")
+qdrant_port = int(os.getenv("QDRANT_PORT", 6333))
+qdrant_collection_name = os.getenv("QDRANT_COLLECTION_NAME", "news_events")
+embedding_model_name = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
+
+qdrant_logic = QdrantLogic(
+    host=qdrant_host,
+    port=qdrant_port,
+    collection_name=qdrant_collection_name,
+    embedding_model_name=embedding_model_name,
+)
 
 def get_db() -> Session:
     db = SessionLocal()
@@ -60,39 +78,33 @@ NATS_OPTIONS = dict(
     nats_max_reconnect_attempts=int(os.getenv("NATS_MAX_RECONNECT_ATTEMPTS", 60)),
 )
 
+probe: ReadinessProbe
 raw_events_publisher: JetStreamPublisher
 new_source_publisher: JetStreamPublisher
 removed_source_publisher: JetStreamPublisher
-qdrant_logic: QdrantLogic
+
+async def update_readiness_continuously(interval_seconds: int = 10):
+    """Periodically updates the readiness probe's last seen time."""
+    while True:
+        if probe:
+            probe.update_last_seen()
+            # logger.debug("🩺 Updated readiness probe timestamp.")
+        await asyncio.sleep(interval_seconds)
+
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("🛠️ API starting…")
+    """Initializes all necessary services and connections on API startup."""
+    logger.info("🚀 API starting up...")
 
     # readiness probe
+    global probe
     probe = ReadinessProbe(readiness_time_out=int(os.getenv("API_READINESS_TIME_OUT", 500)))
     threading.Thread(target=probe.start_server, daemon=True).start()
     logger.info("✅ Readiness probe started.")
 
-    # Initialize Qdrant Logic
-    global qdrant_logic
-    QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
-    QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
-    QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "news_events")
-    EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
-
-    qdrant_logic = QdrantLogic(
-        host=QDRANT_HOST,
-        port=QDRANT_PORT,
-        collection_name=QDRANT_COLLECTION_NAME,
-        embedding_model_name=EMBEDDING_MODEL_NAME
-    )
-    try:
-        qdrant_logic.ensure_collection_exists()
-        logger.info("✅ Qdrant collection ensured to exist.")
-    except Exception as e:
-        logger.error(f"❌ Failed to ensure Qdrant collection: {e}")
-        # Depending on criticality, you might want to raise the exception or handle it gracefully
+    # Start a background task to update readiness, mirroring the connector service
+    asyncio.create_task(update_readiness_continuously())
 
     # JetStream publishers
     global raw_events_publisher, new_source_publisher, removed_source_publisher
@@ -322,29 +334,38 @@ async def delete_source(source_id: int, db: Session = Depends(get_db)):
 
 # ————— News Retrieval Endpoints —————
 
-@app.get("/news/ranked", response_model=List[EventPayload], status_code=status.HTTP_200_OK)
-async def get_ranked_news(limit: int = 20, offset: int = 0):
-    logger.info(f"📱 GET /news/ranked (limit={limit}, offset={offset})")
+@app.get("/news/ranked", response_model=List[EventPayload], tags=["News"])
+async def get_ranked_news(limit: int = 20):
+    """
+    Retrieve a list of ranked news events, ordered by their final score.
+    """
+    logger.info(f"📱 GET /news/ranked (limit={limit})")
     try:
-        events, _ = await qdrant_logic.list_ranked_events(limit=limit, offset=offset)
-        logger.info(f"🗄️ Returning {len(events)} ranked events.")
-        return events
+        # The simplified qdrant_logic function no longer returns a next_page tuple
+        ranked_events = await qdrant_logic.list_ranked_events(limit=limit)
+        return ranked_events
     except Exception as e:
-        logger.error(f"❌ Error retrieving ranked news from Qdrant: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve ranked news.")
+        logger.error(f"❌ Error retrieving ranked news from Qdrant: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/news/filtered", response_model=List[EventPayload], status_code=status.HTTP_200_OK)
-async def get_filtered_news(limit: int = 20, offset: int = 0):
-    logger.info(f"📱 GET /news/filtered (limit={limit}, offset={offset})")
+
+@app.get("/news/filtered", response_model=List[EventPayload], tags=["News"])
+async def get_filtered_news(limit: int = 20):
+    """
+    Retrieve a list of filtered news events (relevant but not yet ranked).
+    """
+    logger.info(f"📱 GET /news/filtered (limit={limit})")
     try:
-        events, _ = await qdrant_logic.list_filtered_events(limit=limit, offset=offset)
-        logger.info(f"🗄️ Returning {len(events)} filtered events.")
-        return events
+        # For the POC, we retrieve all events and then slice, to avoid pagination complexity.
+        # In a production scenario, proper pagination would be implemented here.
+        all_filtered_events = await qdrant_logic.list_filtered_events()
+        return all_filtered_events[:limit]
     except Exception as e:
-        logger.error(f"❌ Error retrieving filtered news from Qdrant: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve filtered news.")
+        logger.error(f"❌ Error retrieving filtered news from Qdrant: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error while fetching filtered news.")
 
-@app.post("/news/rerank", response_model=List[EventPayload], status_code=status.HTTP_200_OK)
+
+@app.post("/news/rerank", response_model=List[EventPayload], tags=["News"])
 async def rerank_news(payload: ReRankRequest):
     logger.info(f"📱 POST /news/rerank with query: '{payload.query}'")
     try:
@@ -362,3 +383,9 @@ async def retrieve_data(batch_id: str):
     if not event_data:
         raise HTTPException(status_code=404, detail="Event not found in Qdrant")
     return event_data
+
+# --- Main Execution ---
+if __name__ == "__main__":
+    # This block is for local development. The 'startup_event' handles initialization
+    # when run by a server like Uvicorn/Gunicorn.
+    uvicorn.run(app, host="0.0.0.0", port=8000)

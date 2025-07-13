@@ -91,6 +91,20 @@ def render_news(endpoint: str, title: str):
             st.dataframe(df)
         else:
             st.info("No items to display.")
+        # Explain why the filtered news table can be empty
+        if endpoint == "/news/filtered":
+            st.info(
+                "Filtered News only lists events that are relevant but NOT yet ranked. "
+                "If the Ranker service is running, items move out of this view instantly. "
+                "Stop Ranker and ingest a new event that passes the filter to see it here."
+            )
+        elif endpoint == "/news/ranked":
+            st.info(
+                "Ranked News shows events after the Ranker assigns a final score. "
+                "If Ranker is stopped, this view will stay empty. Restart Ranker or wait for new events to be processed."
+            )
+    else:
+        st.error("Failed to retrieve news")
 
 
 def render_rerank():
