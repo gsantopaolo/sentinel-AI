@@ -12,15 +12,23 @@ Its core responsibilities include:
 
 ## Core Functionality: Data Ingestion and Normalization
 
-The connector service is an event-driven component that reacts to polling requests from the [`scheduler` service](./scheduler.md). For now, it simulates data fetching and normalization by generating fake news events.
+The connector service is an event-driven component that reacts to polling requests from the [`scheduler` service](./scheduler.md).  
+In the current **proof-of-concept** it uses Playwright + headless Chromium to fetch the landing page URL (`config.url`) and extracts `<a>` links as candidate news items. A lightweight Postgres table (`processed_items`) is used to avoid re-publishing the same link twice.
+
+> ⚠️ **Not production-ready** – the scraper is intentionally naïve: no pagination, no JS login, no cookie handling, no rate-limiting, and it relies on simple heuristics (`len(text) > 25`, link starts with `http`). It is good enough to demonstrate the end-to-end pipeline but will need hardening for real-world news sites.
 
 ### 1. Reacting to Poll Requests (`poll.source`)
 
 When a `poll.source` event is received, the connector acknowledges the message. This event contains information about the source to be polled. The service then proceeds to simulate the data fetching and normalization process.
 
-### 2. Generating Fake News (Placeholder for Real Scraping)
+### 2. Scraping with Playwright (Current Logic)
 
-Currently, the connector service generates a fake news event for each `poll.source` request. This serves as a placeholder for the actual data scraping and normalization logic that would be implemented in a real-world scenario. The fake news is structured as a `RawEvent` Protobuf message.
+1. Opens the URL in headless Chromium (timeout 15 s).  
+2. Collects all anchors with an `href` attribute.  
+3. Filters out short labels and non-http links.  
+4. For each new link, stores a `(source_id, url)` row in `processed_items` and publishes a minimal `RawEvent` (title, timestamp, source).
+
+If Playwright fails to load the page (network error, 4xx, etc.) the connector logs the error and NAKs the message so JetStream can redeliver.
 
 ### 3. Publishing Raw Events (`raw.events`)
 
@@ -29,6 +37,8 @@ After generating (or in the future, scraping and normalizing) a raw event, the c
 ## Why YAML Configuration?
 
 The connector service does not currently utilize a YAML configuration file for its core logic. Its behavior is primarily driven by the `poll.source` events it subscribes to. However, if complex scraping rules, source-specific parsing logic, or API credentials were to be externalized, a YAML configuration would be highly beneficial for managing these settings in a flexible and maintainable way.
+
+If we later need per-site CSS selectors, auth cookies, or pagination depth, these could be expressed via YAML/JSON in the Source `config` and parsed by the scraper.
 
 ## Technical Deep Dive
 

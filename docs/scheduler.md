@@ -2,12 +2,18 @@
 
 ## Overview
 
-The `scheduler` service is responsible for managing the polling schedules of various data sources within the Sentinel AI platform. Its primary role is to react to changes in source configurations (newly added or removed sources) and, in the future, to periodically emit `poll.source` events to trigger data collection by the [`connector` service](./connector.md).
+The `scheduler` service is responsible for managing the polling schedules of various data sources within the Sentinel-AI platform.  
+It now **boots up**, queries the database for all *active* sources, and immediately schedules a periodic polling job for each one.  
+It also reacts in real-time to `new.source` / `removed.source` JetStream events to add or cancel jobs.
+
+> **Note** Each APScheduler job only stores the `source_id`; when the timer fires the job re-opens a DB session to fetch the latest row before emitting the `poll.source` event. This guarantees fresh data without holding long-lived ORM instances.
+
+The emitted `poll.source` events are consumed by the [`connector` service](./connector.md) which currently runs a minimal Playwright-based scraper (see connector docs for limitations).
 
 Its core responsibilities include:
 1.  **Subscribe** to `new.source` events, indicating a new data source has been added.
 2.  **Subscribe** to `removed.source` events, indicating a data source has been removed.
-3.  **Maintain Poll Schedules**: (Future implementation) Based on source configurations, schedule periodic `poll.source` events.
+3.  **Maintain Poll Schedules**: Based on source configurations, schedule periodic `poll.source` events.
 4.  **Emit `poll.source`**: Publish events to the `poll.source` NATS stream to initiate data fetching.
 
 ## Core Functionality
@@ -24,7 +30,10 @@ Similarly, upon receiving a `removed.source` event, the `scheduler` acknowledges
 
 ### 3. Emitting Poll Events (`poll.source`)
 
-(Future Implementation) The `scheduler` will periodically publish `poll.source` events to a NATS stream. Each `poll.source` event will contain information about a specific data source, prompting the [`connector` service](./connector.md) to fetch data from that source.
+The scheduler **already** publishes `poll.source` events according to each source’s configured interval (default configurable via the `SCHEDULER_DEFAULT_POLL_INTERVAL` env var, overridable per-source inside its JSON config).  
+Each message is a Protobuf `PollSource` that includes the source’s `id`, `name`, and the raw `config_json`.
+
+Downstream, the connector interprets that config (mainly the `url`) to scrape fresh items.
 
 ## Why YAML Configuration?
 
@@ -56,7 +65,7 @@ sequenceDiagram
     Scheduler->>Scheduler: Log received removed source details
     Scheduler->>NATS: Acknowledge removed.source message
 
-    Note over Scheduler: (Future) Periodically emit poll.source events
+    Note over Scheduler: Periodically emit poll.source events
     Scheduler->>NATS: Publish poll.source (PollSource Protobuf)
 ```
 
@@ -77,7 +86,7 @@ flowchart TD
 
 *   **NATS JetStream**: Used for asynchronous message passing (`new.source` and `removed.source` subscriptions, `poll.source` publication).
 *   **`src/lib_py/middlewares/JetStreamEventSubscriber`**: Handles subscribing to NATS streams.
-*   **`src/lib_py/middlewares/JetStreamPublisher`**: (Future use) Handles publishing `poll.source` messages.
+*   **`src/lib_py/middlewares/JetStreamPublisher`**: Handles publishing `poll.source` messages.
 *   **Protobufs (`new_source_pb2`, `removed_source_pb2`, `poll_source_pb2`)**: Define the structure of messages exchanged via NATS.
 *   **`APScheduler`**: An asynchronous job scheduler for Python, used for managing polling jobs.
 *   **`src/lib_py/middlewares/ReadinessProbe`**: Ensures the service's health can be monitored.

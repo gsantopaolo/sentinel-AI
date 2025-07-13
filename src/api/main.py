@@ -3,6 +3,7 @@ import json
 import logging
 import threading
 import asyncio
+import uvicorn
 from typing import List, Optional
 from datetime import datetime
 from contextlib import asynccontextmanager

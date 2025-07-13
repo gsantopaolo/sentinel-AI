@@ -6,11 +6,18 @@ from dotenv import load_dotenv
 from nats.aio.msg import Msg
 from datetime import datetime
 import uuid
+import json
+from typing import Optional, List
+
+from playwright.async_api import async_playwright
+from sqlalchemy import create_engine, Column, Integer, String, UniqueConstraint
+from sqlalchemy.orm import sessionmaker
 
 from src.lib_py.middlewares.jetstream_event_subscriber import JetStreamEventSubscriber
 from src.lib_py.middlewares.jetstream_publisher import JetStreamPublisher
-from src.lib_py.gen_types import raw_event_pb2, new_source_pb2, poll_source_pb2
+from src.lib_py.gen_types import raw_event_pb2, poll_source_pb2
 from src.lib_py.middlewares.readiness_probe import ReadinessProbe
+from src.lib_py.models.models import Base
 
 # Load environment variables from .env file
 load_dotenv()
@@ -24,7 +31,7 @@ log_format = os.getenv('LOG_FORMAT', '%(asctime)s - %(name)s - %(levelname)s - %
 
 # Configure logging
 logging.basicConfig(level=log_level, format=log_format)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("sentinel-connector")
 
 READINESS_TIME_OUT = int(os.getenv('CONNECTOR_READINESS_TIME_OUT', 500))
 
@@ -40,44 +47,101 @@ RAW_EVENTS_STREAM_NAME = "raw-events-stream"
 RAW_EVENTS_SUBJECT = "raw.events"
 
 # JetStream Publisher
-raw_events_publisher: JetStreamPublisher = None
+raw_events_publisher: Optional[JetStreamPublisher] = None
 
-async def generate_fake_news(source_name: str) -> raw_event_pb2.RawEvent:
-    """Generates a fake news event."""
-    event_id = str(uuid.uuid4())
-    title = f"Fake News from {source_name} - {datetime.utcnow().isoformat()}"
-    content = f"This is a fake news article generated for testing purposes from {source_name}. It contains some interesting but entirely fabricated information."
-    timestamp = datetime.utcnow().isoformat()
-    
-    return raw_event_pb2.RawEvent(
-        id=event_id,
-        title=title,
-        content=content,
-        timestamp=timestamp,
-        source=source_name
-    )
+# DB for deduplication
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DATABASE_URL) if DATABASE_URL else None
+SessionFactory: Optional[sessionmaker] = sessionmaker(bind=engine) if engine else None
+
+class ProcessedItem(Base):
+    __tablename__ = "processed_items"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_id = Column(Integer, nullable=False)
+    item_url = Column(String, nullable=False)
+
+    __table_args__ = (UniqueConstraint("source_id", "item_url", name="uix_source_item"),)
+
+if engine:
+    Base.metadata.create_all(engine)
+
+PAGE_TIMEOUT = 15000  # ms
+
+async def _scrape_links(url: str) -> List[tuple[str, str]]:
+    """Return list of (title, href) tuples from first page using Playwright only."""
+    links: List[tuple[str, str]] = []
+    logger.info("🕸️  Launch headless browser for %s", url)
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto(url, timeout=PAGE_TIMEOUT)
+        logger.info("📄  Page loaded, querying anchor tags…")
+        anchors = await page.query_selector_all("a[href]")
+        for a in anchors:
+            href = await a.get_attribute("href")
+            text = (await a.inner_text()).strip()
+            if href and text and len(text) > 25 and href.startswith("http"):
+                links.append((text, href))
+        await browser.close()
+    return links
 
 async def poll_source_event_handler(msg: Msg):
     readiness_probe.update_last_seen()
     try:
         poll_source = poll_source_pb2.PollSource()
         poll_source.ParseFromString(msg.data)
-        logger.info(f"✉️ Received poll.source event for source: {poll_source.name} (ID: {poll_source.id})")
-        
-        # Simulate scraping and generating a raw event
-        # todo: make the real implementation to scrape the source
-        # before scraping the source we need to understand if the source has
-        # been already scraped or not, if already scraped we need to check if
-        # it was updated since we scraped.
-        # also, we need to verify if this logic shall go here or in the scheduler...
-        fake_news = await generate_fake_news(poll_source.name)
-        await raw_events_publisher.publish(fake_news)
-        logger.info(f"✉️ Published fake news event '{fake_news.id}' from source '{poll_source.name}' to raw.events.")
+        logger.info("📥 poll.source received: ID=%s name=%s", poll_source.id, poll_source.name)
 
+        # Determine URL
+        src_url: Optional[str] = None
+        try:
+            cfg = json.loads(poll_source.config_json)
+            src_url = cfg.get("url")
+        except Exception:
+            pass
+        if not src_url:
+            src_url = poll_source.name  # fallback
+
+        if not src_url.startswith("http"):
+            logger.warning("⚠️  Source %s has invalid URL %s", poll_source.id, src_url)
+            await msg.ack()
+            return
+
+        links = await _scrape_links(src_url)
+        logger.info("🔍 Scraped %s candidate links from %s", len(links), src_url)
+
+        if not (raw_events_publisher and SessionFactory):
+            logger.error("❌ Publisher or DB not initialised")
+            await msg.nak()
+            return
+
+        new_count = 0
+        with SessionFactory() as db:
+            for title, href in links:
+                exists = db.query(ProcessedItem).filter_by(source_id=poll_source.id, item_url=href).first()
+                if exists:
+                    continue
+                # Insert processed marker
+                db.add(ProcessedItem(source_id=poll_source.id, item_url=href))
+            # commit once after batch insert
+            db.commit()
+
+            for title, href in [l for l in links if not db.query(ProcessedItem).filter_by(source_id=poll_source.id, item_url=l[1]).first()]:
+                event = raw_event_pb2.RawEvent(
+                    id=str(uuid.uuid4()),
+                    title=title[:200],
+                    content=title,
+                    timestamp=datetime.utcnow().isoformat(),
+                    source=poll_source.name,
+                )
+                await raw_events_publisher.publish(event)
+                new_count += 1
+
+        logger.info("📤 Published %s new raw events for source %s", new_count, poll_source.id)
         await msg.ack()
-        logger.info(f"✅ Acknowledged poll.source event for {poll_source.name}")
+        logger.info("✅ Acknowledged poll.source event %s", poll_source.id)
     except Exception as e:
-        logger.error(f"❌ Error processing poll.source event: {e}")
+        logger.exception("❌ Error processing poll.source event: %s", e)
         await msg.nak() # Negative acknowledgment
 
 async def main():
