@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 import threading
+import os
 
 from google.protobuf import message as _message
 from nats.aio.client import Client as NATS
@@ -11,6 +12,8 @@ from nats.js.errors import BadRequestError
 
 from src.lib_py.middlewares.readiness_probe import ReadinessProbe
 
+# Get log level from env
+log_level_str = os.getenv('LOG_LEVEL', 'INFO').upper()
 
 class JetStreamEventSubscriber:
     def __init__(self, nats_url: str, stream_name: str, subject: str,

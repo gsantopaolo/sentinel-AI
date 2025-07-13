@@ -31,11 +31,13 @@ services:
       - sentinel-backend-network
       - sentinel-frontend-network
 #      - sentinel-frontend-network # For Traefik exposure
-#    depends_on:
-#      postgres:
-#        condition: service_started
-#      nats:
-#        condition: service_started
+    depends_on:
+      postgres:
+        condition: service_started
+      nats:
+        condition: service_started
+      qdrant:
+        condition: service_started
 #    healthcheck:
 #      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
 #      interval: 60s
@@ -74,6 +76,13 @@ services:
     restart: unless-stopped
     networks:
       - sentinel-backend-network
+    depends_on:
+      postgres:
+        condition: service_started
+      nats:
+        condition: service_started
+      qdrant:
+        condition: service_started
     healthcheck:
       test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
       interval: 60s
@@ -107,6 +116,13 @@ services:
     restart: unless-stopped
     networks:
       - sentinel-backend-network
+    depends_on:
+      postgres:
+        condition: service_started
+      nats:
+        condition: service_started
+      qdrant:
+        condition: service_started
     healthcheck:
       test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
       interval: 60s
@@ -136,6 +152,13 @@ services:
     restart: unless-stopped
     networks:
       - sentinel-backend-network
+    depends_on:
+      postgres:
+        condition: service_started
+      nats:
+        condition: service_started
+      qdrant:
+        condition: service_started
     healthcheck:
       test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
       interval: 60s
@@ -169,6 +192,13 @@ services:
     restart: unless-stopped
     networks:
       - sentinel-backend-network
+    depends_on:
+      postgres:
+        condition: service_started
+      nats:
+        condition: service_started
+      qdrant:
+        condition: service_started
 #    healthcheck:
 #      test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
 #      interval: 60s
@@ -193,6 +223,11 @@ services:
     restart: unless-stopped
     networks:
       - sentinel-backend-network
+    depends_on:
+      postgres:
+        condition: service_started
+      nats:
+        condition: service_started
     healthcheck:
       test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
       interval: 60s
@@ -209,9 +244,17 @@ services:
       LOG_LEVEL: ${LOG_LEVEL}
       LOG_FORMAT: ${LOG_FORMAT}
       GUARDIAN_READINESS_TIME_OUT: ${GUARDIAN_READINESS_TIME_OUT}
+      NATS_URL: ${NATS_URL}
+      NATS_RECONNECT_TIME_WAIT: ${NATS_RECONNECT_TIME_WAIT}
+      NATS_CONNECT_TIMEOUT: ${NATS_CONNECT_TIMEOUT}
+      NATS_MAX_RECONNECT_ATTEMPTS: ${NATS_MAX_RECONNECT_ATTEMPTS}
+      ALERTS: ${ALERTS}
     restart: unless-stopped
     networks:
       - sentinel-backend-network
+    depends_on:
+      nats:
+        condition: service_started
     healthcheck:
       test: "curl --silent --fail http://localhost:8080/healthz > /dev/null || exit 1"
       interval: 60s
@@ -241,6 +284,9 @@ services:
       bash -c "streamlit run src/web/app.py \
         --server.address $STREAMLIT_SERVER_ADDRESS \
         --server.port    $STREAMLIT_SERVER_PORT"
+    depends_on:
+      api:
+        condition: service_started
 #    labels:
 #      - "traefik.enable=true"
 #      - "traefik.http.routers.web.rule=Host(`localhost`) && PathPrefix(`/web`)"
@@ -254,3 +300,109 @@ services:
 #      start_period: 10s
 #      timeout: 3s
 #      retries: 3
+
+
+  nats:
+    image: nats:latest
+    container_name: sentinel-nats
+    ports:
+      - "4222:4222"
+      - "8222:8222" # Monitoring port
+    volumes:
+      - nats-data:/data/nats
+    command:
+      - "--name=nats"
+      - "--http_port=8222"
+      - "--js"
+      - "--sd=/data/nats"
+
+    restart: unless-stopped
+    networks:
+      - sentinel-backend-network
+
+  nats-dashboard:
+    image: mdawar/nats-dashboard
+    container_name: nats-dashboard
+    restart: unless-stopped
+    environment:
+      # The NATS monitoring server will be proxied on /proxy/* on the frontend.
+      # See: config/Caddyfile for the reverse proxy configuration.
+      REVERSE_PROXY_UPSTREAM: 'nats:8222'
+#    volumes:
+#      - ${CONFIG_PATH}/nats/nats-config.json:/srv/config.json
+    ports:
+      - "8502:80"
+    networks:
+      - sentinel-frontend-network
+      - sentinel-backend-network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: sentinel-qdrant
+    ports:
+      - "6333:6333" # Web UI
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - sentinel-backend-network
+
+  postgres:
+    image: postgres:16
+    container_name: sentinel-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 30s # Increased start_period
+    restart: unless-stopped
+    networks:
+      - sentinel-backend-network
+
+  pgadmin:
+    container_name: pgadmin #not adding this cause yugabyte health check not to start
+    image: dpage/pgadmin4:9.4.0
+    environment:
+      PGADMIN_DEFAULT_EMAIL: 'pgadmin@pgadmin.com'
+      PGADMIN_DEFAULT_PASSWORD: 'pgadmin'
+    ports:
+      - 16543:80
+    volumes:
+      - ./servers.json:/pgadmin4/servers.json
+    networks:
+      - sentinel-backend-network
+      - sentinel-frontend-network
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:80/misc/ping" ]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  nats-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH}/nats
+  qdrant-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH}/qdrant
+  postgres-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH}/postgres

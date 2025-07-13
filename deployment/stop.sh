@@ -35,12 +35,6 @@ docker compose \
   -f deployment/docker-compose.services.yml \
   down ${REMOVE_VOLUMES}
 
-docker compose \
-  -p sentinel-services \
-  --env-file deployment/.env \
-  -f deployment/docker-compose.base.yml \
-  down ${REMOVE_VOLUMES}
-
 # Traefik & portainer
 docker compose \
   -p sentinel-infra \

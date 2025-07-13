@@ -22,11 +22,14 @@ class JetStreamPublisher:
         self.message_type = message_type
 
     async def connect(self):
+        self.logger.info(f"🔌 connecting to nats endpoint {self.nats_url} ..")
         # Connect to NATS
         await self.nc.connect(servers=[self.nats_url],
                               connect_timeout=self.nats_connect_timeout,
                               reconnect_time_wait=self.nats_reconnect_time_wait,
                               max_reconnect_attempts=self.nats_max_reconnect_attempts)
+        self.logger.info(f"✅ successfully connected {self.nats_url}")
+
         # Create JetStream context
         self.js = self.nc.jetstream()
 
@@ -60,7 +63,7 @@ class JetStreamPublisher:
 
             # Publish the message with the headers
             await self.js.publish(self.subject, message.SerializeToString(), headers=headers)
-            self.logger.info(f"✉️ Message {self.message_type} published successfully!")
+            self.logger.info(f"✉️ Message {self.subject} published successfully!")
         except NoRespondersError:
             self.logger.error("❌ No responders available for request")
         except TimeoutError:

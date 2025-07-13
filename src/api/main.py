@@ -136,7 +136,7 @@ class Event(BaseModel):
     id: str
     source: str
     title: str
-    body: Optional[str] = None
+    content: str
     published_at: datetime
 
 class SourceBase(BaseModel):
@@ -169,7 +169,7 @@ class SourceRead(BaseModel):
     is_active: bool
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # ————— Ingest Endpoint —————
 @app.post("/ingest", status_code=status.HTTP_200_OK)
@@ -177,28 +177,28 @@ async def ingest_data(events: List[Event]):
     logger.info(f"📱 Received ingest batch of {len(events)} events")
     for ev in events:
         try:
-            # Basic validation
-            if not all(k in ev for k in ['id', 'source', 'title', 'published_at']):
-                logger.warning(f"Skipping event due to missing required fields: {ev.get('id', 'N/A')}")
+            # Basic validation for required fields
+            if not all([ev.id, ev.source, ev.title, ev.published_at, ev.content]):
+                logger.warning(f"Skipping event due to missing required fields: {ev.id or 'N/A'}")
                 continue
 
-            logger.info(f"Processing event: {ev['id']}")
+            logger.info(f"Processing event: {ev.id}")
 
             # Publish to NATS for further processing by the 'filter' service
             raw = raw_event_pb2.RawEvent(
-                id=ev['id'],
-                source=ev['source'],
-                title=ev['title'],
-                content=ev.get('content', ev.get('body', '')), # Handle both 'content' and 'body'
-                timestamp=ev['published_at']
+                id=ev.id,
+                source=ev.source,
+                title=ev.title,
+                content=ev.content,
+                timestamp=ev.published_at.isoformat()
             )
             
             # The publisher is now responsible for sending the message
             await raw_events_publisher.publish(raw)
-            logger.info(f"✉️ Published raw event: {ev['id']}")
+            logger.info(f"✉️ Published raw event: {ev.id} source={ev.source} to be processed by 'filter' service")
 
         except Exception as e:
-            logger.error(f"❌ Error processing event {ev.get('id', 'N/A')}: {e}")
+            logger.error(f"❌ Error processing event {ev.id or 'N/A'}: {e}")
             # Continue with next event even if one fails
             continue
 
@@ -266,7 +266,7 @@ async def create_source(payload: SourceCreate, db: Session = Depends(get_db)):
     )
     try:
         await new_source_publisher.publish(msg)
-        logger.info(f"✉️ Published new.source event id={src.id}")
+        logger.info(f"✉️ Published new.source: {msg.id} source={msg.source} to be processed by scheduler service")
     except Exception as e:
         logger.error(f"❌ Publishing new.source id={src.id} failed: {e}")
     return source_to_read_model(src)

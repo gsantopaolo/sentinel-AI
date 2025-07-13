@@ -73,7 +73,6 @@ docker compose \
 docker compose \
   -p sentinel-services \
   --env-file deployment/.env \
-  -f deployment/docker-compose.base.yml \
   -f deployment/docker-compose.services.yml \
   up -d "$@"
 

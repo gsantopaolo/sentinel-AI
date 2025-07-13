@@ -6,7 +6,6 @@ import streamlit as st
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from src.lib_py.middlewares.readiness_probe import ReadinessProbe
 
 # ————— Load Environment & Configure Logging —————
 load_dotenv()
@@ -22,13 +21,13 @@ BASE_URL = os.getenv("API_BASE_URL", "http://api:8000")
 READINESS_TIME_OUT = int(os.getenv("WEB_READINESS_TIME_OUT", 500))
 
 # ————— Readiness Probe on Startup —————
-if "startup_done" not in st.session_state:
-    logger.info("🛠️ Sentinel-AI Web UI starting...")
-    probe = ReadinessProbe(readiness_time_out=READINESS_TIME_OUT)
-    t = threading.Thread(target=probe.start_server, daemon=True)
-    t.start()
-    logger.info("✅ Readiness probe server started.")
-    st.session_state.startup_done = True
+# if "startup_done" not in st.session_state:
+#     logger.info("🛠️ Sentinel-AI Web UI starting...")
+#     probe = ReadinessProbe(readiness_time_out=READINESS_TIME_OUT)
+#     t = threading.Thread(target=probe.start_server, daemon=True)
+#     t.start()
+#     logger.info("✅ Readiness probe server started.")
+#     st.session_state.startup_done = True
 
 # ————— Helper: API Call —————
 def make_request(method: str, endpoint: str, data=None):
